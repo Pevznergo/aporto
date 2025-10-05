@@ -1,5 +1,5 @@
 {
   "UPSCALE_IMAGE": "your-dockerhub-username/video-upscale-app:latest",
   "UPSCALE_CONCURRENCY": 2,
-  "VAST_INSTANCE_ID": "26468624"
+  "VAST_INSTANCE_ID": "26473700"
 }
