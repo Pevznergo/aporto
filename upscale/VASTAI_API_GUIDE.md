@@ -1,4 +1,6 @@
-# Vast.ai API Guide for Video Upscaling Application
+# Consolidated
+
+See README.md in this folder for Vast.ai API usage.
 
 This guide explains how to use the Vast.ai API to deploy, manage, and control your video upscaling application.
 

@@ -1,4 +1,6 @@
-# Deployment Guide for Vast.ai L4 Server
+# Consolidated
+
+See README.md in this folder for Vast.ai deployment steps.
 
 This guide explains how to deploy the Video Upscaling Application on a Vast.ai rented L4 server.
 

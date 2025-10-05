@@ -1,4 +1,6 @@
-# Video Upscaling API Documentation
+# Consolidated
+
+See README.md in this folder for API documentation.
 
 This document describes the REST API for the Video Upscaling application.
 

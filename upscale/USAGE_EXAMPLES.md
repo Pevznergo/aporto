@@ -1,4 +1,6 @@
-# Usage Examples for Video Upscaling Application
+# Consolidated
+
+Usage examples were merged into README.md.
 
 ## 1. SSH-based Processing
 

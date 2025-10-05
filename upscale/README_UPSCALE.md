@@ -1,4 +1,6 @@
-# Video Upscaling Application for Vast.ai L4 Server
+# Consolidated
+
+See README.md in this folder for current documentation.
 
 This is a simplified application for video upscaling using the realesr-general-x4v3 model, designed to run on a rented L4 server on Vast.ai.
 

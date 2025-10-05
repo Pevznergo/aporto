@@ -1,4 +1,6 @@
-# Deployment Example
+# Consolidated
+
+Examples were merged into README.md.
 
 This document shows a complete example of deploying the video upscaling application to Vast.ai.
 
