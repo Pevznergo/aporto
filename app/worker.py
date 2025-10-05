@@ -26,6 +26,18 @@ TO_UPSCALE_DIR = os.path.abspath(os.path.join(BASE_DIR, "to_upscale"))
 RAW_DIR = VIDEOS_DIR
 PROCESSED_DIR = VIDEOS_DIR
 
+# Allowed media extensions for upscale scanning
+UPSCALE_MEDIA_EXTS = {
+    ".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v",
+    ".mpeg", ".mpg", ".m2ts", ".ts", ".flv"
+}
+
+def _is_media_file(name: str) -> bool:
+    if not name or name.startswith('.'):
+        return False
+    ext = os.path.splitext(name)[1].lower()
+    return ext in UPSCALE_MEDIA_EXTS
+
 
 download_queue: "Queue[int]" = Queue()
 process_queue: "Queue[int]" = Queue()
@@ -246,12 +258,15 @@ def get_vast():
 def upscale_watcher():
     """
     Scan TO_UPSCALE_DIR periodically and enqueue new files as UpscaleTask.
+    Only media files are considered; hidden/system files are ignored.
     """
     last_seen = set()
     while not stop_event.is_set():
         try:
             current = set()
             for name in os.listdir(TO_UPSCALE_DIR):
+                if not _is_media_file(name):
+                    continue
                 path = os.path.join(TO_UPSCALE_DIR, name)
                 if os.path.isfile(path):
                     current.add(path)
@@ -372,6 +387,8 @@ def trigger_upscale_scan():
     # force scan by placing all files into queue if not yet queued
     with Session(engine) as session:
         for name in os.listdir(TO_UPSCALE_DIR):
+            if not _is_media_file(name):
+                continue
             path = os.path.join(TO_UPSCALE_DIR, name)
             if not os.path.isfile(path):
                 continue
@@ -403,3 +420,40 @@ def retry_upscale_task(task_id: int):
         session.commit()
         upscale_queue.put(ut.id)
         return ut
+
+
+def _purge_from_queue(q: Queue, task_id: int):
+    """Remove all occurrences of task_id from queue q (best-effort)."""
+    tmp = []
+    while True:
+        try:
+            item = q.get_nowait()
+            if item != task_id:
+                tmp.append(item)
+        except Empty:
+            break
+    for item in tmp:
+        q.put(item)
+
+
+def delete_upscale_task(task_id: int):
+    with Session(engine) as session:
+        ut = session.get(UpscaleTask, task_id)
+        if not ut:
+            raise HTTPException(status_code=404, detail="Upscale task not found")
+        # Best-effort: allow deletion even if processing; worker may still be running
+        # but will not be able to update a deleted row.
+        # Remove from queue if present
+        _purge_from_queue(upscale_queue, task_id)
+        # Delete input file (safety: only under TO_UPSCALE_DIR)
+        try:
+            if ut.file_path and os.path.isfile(ut.file_path):
+                safe_prefix = TO_UPSCALE_DIR + os.sep
+                if ut.file_path.startswith(safe_prefix) or ut.file_path == TO_UPSCALE_DIR:
+                    os.remove(ut.file_path)
+        except Exception:
+            pass
+        # Delete DB row
+        session.delete(ut)
+        session.commit()
+        return {"ok": True}

@@ -16,7 +16,7 @@ except ImportError:
 from .db import init_db, get_session
 from .models import Task, TaskStatus
 from .schemas import CreateTask, TaskOut, UpscaleTaskOut
-from .worker import start_workers, add_task_to_download, VIDEOS_DIR, CLIPS_UPSCALED_DIR, TO_UPSCALE_DIR, trigger_upscale_scan, list_upscale_tasks, retry_upscale_task
+from .worker import start_workers, add_task_to_download, VIDEOS_DIR, CLIPS_UPSCALED_DIR, TO_UPSCALE_DIR, trigger_upscale_scan, list_upscale_tasks, retry_upscale_task, delete_upscale_task
 
 app = FastAPI(title="Video Cutter Task Manager")
 
@@ -117,6 +117,11 @@ def api_retry_upscale(task_id: int):
     return retry_upscale_task(task_id)
 
 
+@app.delete("/api/upscale/tasks/{task_id}")
+def api_delete_upscale(task_id: int):
+    return delete_upscale_task(task_id)
+
+
 # Upscale settings and status
 from .upscale_config import get_upscale_settings, save_upscale_settings
 from .upscale_vast import VastManager
@@ -139,3 +144,14 @@ def api_get_upscale_status():
     except Exception:
         state = "unknown"
     return {"state": state}
+
+
+@app.post("/api/upscale/ensure")
+def api_upscale_ensure():
+    try:
+        vm = VastManager()
+        details = vm.ensure_instance_running()
+        return {"id": details.get("id"), "state": details.get("actual_status")}
+    except Exception as e:
+        # Return a clear error instead of hanging/empty reply
+        raise HTTPException(status_code=502, detail=f"Failed to ensure instance running: {e}")

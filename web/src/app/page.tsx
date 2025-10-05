@@ -3,7 +3,7 @@
 import React from 'react'
 import { useEffect, useState } from 'react'
 import { createTask, listTasks, retryTask, type Task } from '@/lib/api'
-import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, type UpscaleTask } from '@/lib/upscale'
+import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
   const map: Record<string, { label: string; color: string }> = {
@@ -90,6 +90,7 @@ function UpscaleSection() {
         <h2 style={{ marginTop: 0 }}>Upscale задачи</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => triggerUpscaleScan().then(refresh)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', background: '#162033', color: '#e6eaf2' }}>Сканировать to_upscale</button>
+          <button onClick={() => ensureUpscaleInstance().then(refresh)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', background: '#162033', color: '#e6eaf2' }}>Запустить инстанс</button>
           <button onClick={() => setShowSettings(s => !s)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2' }}>{showSettings ? 'Закрыть' : 'Настройки'}</button>
           <a href="/clips_upscaled" target="_blank" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2' }}>Открыть clips_upscaled</a>
         </div>
@@ -146,9 +147,22 @@ function UpscaleSection() {
                 {t.result_path ? <a href={`/clips_upscaled/${t.result_path.split('/').pop()}`} target="_blank">скачать</a> : '-'}
               </td>
               <td>
-                {t.status === 'error' ? (
-                  <button onClick={() => retryUpscale(t.id).then(refresh)}>Повторить</button>
-                ) : '-'}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {t.status === 'error' ? (
+                    <button onClick={() => retryUpscale(t.id).then(refresh)}>Повторить</button>
+                  ) : null}
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Удалить задачу и входной файл из to_upscale/?')) return
+                      try {
+                        await deleteUpscale(t.id)
+                        await refresh()
+                      } catch (e) {
+                        alert('Не удалось удалить задачу: ' + (e as Error).message)
+                      }
+                    }}
+                  >Удалить</button>
+                </div>
               </td>
               <td>{t.error || '-'}</td>
             </tr>
