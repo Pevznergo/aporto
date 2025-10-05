@@ -1,0 +1,16 @@
+{
+  "client_id": "me",
+  "image": "your-dockerhub-username/video-upscale-app:latest",
+  "env": {
+    "PORT": "5000"
+  },
+  "disk": 32.0,
+  "onstart": "/start_server.sh",
+  "runtype": "ssh_direc",
+  "image_login": null,
+  "python_utf8": false,
+  "lang_utf8": false,
+  "use_jupyter_lab": false,
+  "jupyter_dir": null,
+  "cuda_v": 11.8
+}
