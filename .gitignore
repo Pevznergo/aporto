@@ -1,0 +1,48 @@
+# Ignore whisper_models directory and its contents
+whisper_models/
+whisper_models/*
+
+# Ignore clips directory and its contents
+clips/
+clips/*
+
+# Ignore videos directory and its contents
+videos/
+videos/*
+
+# Ignore other common Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.coverage
+.coveragerc
+.tox/
+.nox/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db

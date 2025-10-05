@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+sqlalchemy<3
+pydantic
+jinja2
+python-multipart
+yt-dlp
+openai
+openai-whisper
+torch
+ffmpeg-python

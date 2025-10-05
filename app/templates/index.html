@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Video Cutter Task Manager</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <h1>Видео: загрузка и обрезка</h1>
+
+  <section id="form">
+    <h2>Добавить задачу</h2>
+    <form id="add-form">
+      <label>Ссылка на YouTube:
+        <input type="url" name="url" placeholder="https://www.youtube.com/watch?v=..." required />
+      </label>
+      <div class="row">
+        <label>Начало (секунды или HH:MM:SS):
+          <input type="text" name="start" placeholder="например 12 или 00:00:12" />
+        </label>
+        <label>Конец (секунды или HH:MM:SS):
+          <input type="text" name="end" placeholder="например 35 или 00:00:35" />
+        </label>
+      </div>
+      <button type="submit">Добавить</button>
+    </form>
+  </section>
+
+  <section id="tasks">
+    <h2>Задачи</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Статус</th><th>Видео</th><th>Скачанное</th><th>Результат</th><th>Действия</th>
+        </tr>
+      </thead>
+      <tbody id="tasks-body">
+        {% for t in tasks %}
+        <tr>
+          <td>{{ t.id }}</td>
+          <td>{{ t.status }}</td>
+          <td><a href="{{ t.url }}" target="_blank">ссылка</a></td>
+          <td>
+            {% if t.downloaded_path %}
+              {% set rel = t.downloaded_path.replace(videos_dir, '') %}
+              <a href="/videos{{ rel }}">{{ t.original_filename or 'файл' }}</a>
+            {% else %}-{% endif %}
+          </td>
+          <td>
+            {% if t.processed_path %}
+              {% set rel2 = t.processed_path.replace(videos_dir, '') %}
+              <a href="/videos{{ rel2 }}" download>скачать</a>
+            {% else %}-{% endif %}
+          </td>
+          <td>
+            {% if t.status == 'error' %}
+              <span class="error">{{ t.error }}</span>
+              <button data-id="{{ t.id }}" class="retry">Повторить</button>
+            {% else %}-{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
