@@ -10,6 +10,11 @@ clips/*
 videos/
 videos/*
 
+# Ignore Python virtual environment
+.venv/
+venv/
+env/
+
 # Ignore other common Python artifacts
 __pycache__/
 *.pyc

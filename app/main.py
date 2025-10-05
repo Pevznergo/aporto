@@ -6,6 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 import os
 
+# Try to load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv is optional
+
 from .db import init_db, get_session
 from .models import Task, TaskStatus
 from .schemas import CreateTask, TaskOut
