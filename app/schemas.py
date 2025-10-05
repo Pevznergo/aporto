@@ -38,6 +38,8 @@ class TaskOut(BaseModel):
     url: str
     mode: str
     status: str
+    stage: Optional[str]
+    progress: Optional[int]
     video_id: Optional[str]
     original_filename: Optional[str]
     downloaded_path: Optional[str]

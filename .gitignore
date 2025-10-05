@@ -10,12 +10,13 @@ clips/*
 videos/
 videos/*
 
-# Ignore Python virtual environment
+# Ignore Python virtual environments
 .venv/
 venv/
 env/
+ENV/
 
-# Ignore other common Python artifacts
+# Ignore Python bytecode and cache files
 __pycache__/
 *.pyc
 *.pyo
@@ -24,6 +25,8 @@ __pycache__/
 *.so
 .coverage
 .coveragerc
+
+# Ignore Python packaging and distribution
 .tox/
 .nox/
 build/
@@ -41,13 +44,79 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
-# Ignore IDE files
+# Ignore Jupyter Notebook checkpoint files
+.ipynb_checkpoints/
+
+# Ignore IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.DS_Store
+Thumbs.db
 
 # Ignore OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Ignore log files
+*.log
+logs/
+log/
+
+# Ignore database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore environment variable files (except templates)
+.env
+!.env.example
+
+# Ignore temporary and backup files
+*.tmp
+*.bak
+*.backup
+*.temp
+
+# Ignore node_modules and Next.js build output
+node_modules/
+.next/
+
+# Ignore compiled files
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Ignore coverage reports
+htmlcov/
+.coverage
+.coverage.*
+*,cover
+.cache
+
+# Ignore testing frameworks
+.pytest_cache/
+pytest_cache/
+.noseids
+
+# Ignore documentation artifacts
+docs/_build/
+
+# Ignore configuration files that may contain sensitive information
+config.json
+settings.json
+secrets.json
+*.key
+*.pem
+*.crt

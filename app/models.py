@@ -18,6 +18,11 @@ class Task(SQLModel, table=True):
     url: str
     mode: str = Field(default="simple")  # "simple" | "auto"
     status: str = Field(default=TaskStatus.QUEUED_DOWNLOAD)
+    # Текущая стадия процесса (для UI): downloading | transcribing | gpt | cutting | done | error
+    stage: Optional[str] = None
+    # Прогресс в процентах (0..100)
+    progress: Optional[int] = None
+
     video_id: Optional[str] = None
     original_filename: Optional[str] = None
     downloaded_path: Optional[str] = None

@@ -1,9 +1,11 @@
+'use client'
+
 import { createTask, listTasks, retryTask, type Task } from '@/lib/api'
 import { useEffect, useState } from 'react'
 
 function VideosLinks({ t }: { t: Task }) {
   const videosBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
-  const fileName = (p?: string | null) => p ? p.split('/').pop() : null
+  const fileName = (p?: string | null) => (p ? p.split('/').pop() : null)
   const dl = t.downloaded_path ? `${videosBase}/videos/${fileName(t.downloaded_path)}` : null
   const processed = t.processed_path ? `${videosBase}/videos/${fileName(t.processed_path)}` : null
   const clips = t.clips_dir ? `${videosBase}/clips/${t.clips_dir.split('/').pop()}` : null
@@ -13,13 +15,24 @@ function VideosLinks({ t }: { t: Task }) {
   return (
     <>
       <td>
-        {dl ? <a href={dl} target="_blank">скачанное</a> : '-'}
+        {dl ? (
+          <a href={dl} target="_blank">скачанное</a>
+        ) : (
+          '-'
+        )}
       </td>
       <td>
-        {processed ? <a href={processed} download>результат</a> : (t.mode === 'auto' ? (clips ? <a href={clips} target="_blank">папка клипов</a> : '-') : '-')}
+        {processed ? (
+          <a href={processed} download>результат</a>
+        ) : t.mode === 'auto' ? (
+          clips ? <a href={clips} target="_blank">папка клипов</a> : '-'
+        ) : (
+          '-'
+        )}
       </td>
       <td>
-        {transcript ? <a href={transcript} target="_blank">транскрипт</a> : '-'} | {clipsJson ? <a href={clipsJson} target="_blank">clips.json</a> : '-'}
+        {transcript ? <a href={transcript} target="_blank">транскрипт</a> : '-'} |{' '}
+        {clipsJson ? <a href={clipsJson} target="_blank">clips.json</a> : '-'}
       </td>
     </>
   )
@@ -42,17 +55,25 @@ export default function Page() {
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const payload = {
-      url: String(fd.get('url') || ''),
-      mode: (String(fd.get('mode') || 'simple') as 'simple' | 'auto'),
-      start: fd.get('start') ? String(fd.get('start')) : null,
-      end: fd.get('end') ? String(fd.get('end')) : null,
-    }
+    const form = e.currentTarget
+    const fd = new FormData(form)
+
+    const mode = (String(fd.get('mode') || 'simple') as 'simple' | 'auto')
+    const url = String(fd.get('url') || '')
+
+    // В auto режиме игнорируем start/end
+    const startRaw = mode === 'auto' ? null : fd.get('start')
+    const endRaw = mode === 'auto' ? null : fd.get('end')
+
+    const start = startRaw && String(startRaw).trim() !== '' ? String(startRaw) : null
+    const end = endRaw && String(endRaw).trim() !== '' ? String(endRaw) : null
+
+    const payload = { url, mode, start, end }
+
     setLoading(true)
     try {
       await createTask(payload)
-      e.currentTarget.reset()
+      form?.reset()
       await refresh()
     } finally {
       setLoading(false)
@@ -97,15 +118,31 @@ export default function Page() {
         <table>
           <thead>
             <tr>
-              <th>ID</th><th>Режим</th><th>Статус</th><th>Видео</th><th>Файлы</th><th>Результаты</th><th>Логи</th><th>Действия</th>
+              <th>ID</th>
+              <th>Название</th>
+              <th>Режим</th>
+              <th>Статус</th>
+              <th>Прогресс</th>
+              <th>Видео</th>
+              <th>Файлы</th>
+              <th>Результаты</th>
+              <th>Логи</th>
+              <th>Действия</th>
             </tr>
           </thead>
           <tbody>
             {tasks.map(t => (
               <tr key={t.id}>
                 <td>{t.id}</td>
+                <td>{t.original_filename || '-'}</td>
                 <td>{t.mode}</td>
                 <td>{t.status}</td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <progress value={t.progress ?? 0} max={100} style={{ width: 120 }} />
+                    <span>{(t.progress ?? 0)}%{t.stage ? ` (${t.stage})` : ''}</span>
+                  </div>
+                </td>
                 <td><a href={t.url} target="_blank">ссылка</a></td>
                 <VideosLinks t={t} />
                 <td>{t.error ? <span style={{ color: '#b00020' }}>{t.error}</span> : '-'}</td>
@@ -122,3 +159,4 @@ export default function Page() {
     </div>
   )
 }
+

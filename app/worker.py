@@ -64,6 +64,8 @@ def download_worker():
                 continue
             try:
                 task.status = TaskStatus.DOWNLOADING
+                task.stage = "downloading"
+                task.progress = 5
                 task.updated_at = time_utc()
                 session.add(task)
                 session.commit()
@@ -73,6 +75,8 @@ def download_worker():
                 task.original_filename = title
                 task.downloaded_path = file_path
                 task.status = TaskStatus.QUEUED_PROCESS
+                task.stage = "queued_process"
+                task.progress = 25
                 task.updated_at = time_utc()
                 session.add(task)
                 session.commit()
@@ -81,6 +85,8 @@ def download_worker():
             except Exception as e:
                 task.error = str(e)
                 task.status = TaskStatus.ERROR
+                task.stage = "error"
+                task.progress = None
                 task.updated_at = time_utc()
                 session.add(task)
                 session.commit()
@@ -116,16 +122,65 @@ def process_worker():
                     base_name = os.path.splitext(os.path.basename(task.downloaded_path or "video"))[0]
                     out_dir = os.path.join(CLIPS_DIR, base_name)
                     os.makedirs(out_dir, exist_ok=True)
-                    transcript_path, clips_json_path, clip_files = auto_pipeline.process_auto_task(task.downloaded_path, out_dir)
+
+                    # 1) Transcribe
+                    task.stage = "transcribing"
+                    task.progress = 40
+                    task.updated_at = time_utc()
+                    session.add(task)
+                    session.commit()
+                    transcript_path = os.path.join(out_dir, f"{base_name}_transcript.json")
+                    transcript = auto_pipeline.transcribe_video(task.downloaded_path, transcript_path)
+
+                    # 2) Ask GPT
+                    task.stage = "gpt"
+                    task.progress = 70
+                    task.updated_at = time_utc()
+                    session.add(task)
+                    session.commit()
+                    clips_json_path = os.path.join(out_dir, f"{base_name}_clips.json")
+                    clips = auto_pipeline.ask_gpt(transcript, clips_json_path)
+
+                    # 3) Cut clips
+                    total = max(len(clips), 1)
+                    task.stage = "cutting"
+                    task.progress = 80
+                    task.updated_at = time_utc()
+                    session.add(task)
+                    session.commit()
+
+                    def on_progress(i: int, total_clips: int):
+                        # Прогресс от 80 до 100 в зависимости от продвинутых клипов
+                        pct = 80 + int((i / max(total_clips, 1)) * 20)
+                        with Session(engine) as ses2:
+                            t2 = ses2.get(Task, task.id)
+                            if t2:
+                                t2.progress = min(pct, 99)
+                                t2.updated_at = time_utc()
+                                ses2.add(t2)
+                                ses2.commit()
+
+                    clip_files = auto_pipeline.cut_clips(task.downloaded_path, clips, out_dir, on_progress=on_progress)
+
+                    # Успешно: сохраняем пути, отмечаем done, и только теперь можно удалить исходник, если нужно
                     task.clips_dir = out_dir
                     task.transcript_path = transcript_path
                     task.clips_json_path = clips_json_path
                     task.processed_path = None
                     task.status = TaskStatus.DONE
+                    task.stage = "done"
+                    task.progress = 100
                 else:
+                    task.stage = "cutting"
+                    task.progress = 80
+                    task.updated_at = time_utc()
+                    session.add(task)
+                    session.commit()
                     output_path = process_video(task.downloaded_path, PROCESSED_DIR, task.start_time, task.end_time)
                     task.processed_path = output_path
                     task.status = TaskStatus.DONE
+                    task.stage = "done"
+                    task.progress = 100
 
                 task.updated_at = time_utc()
                 session.add(task)
@@ -133,6 +188,8 @@ def process_worker():
             except Exception as e:
                 task.error = str(e)
                 task.status = TaskStatus.ERROR
+                task.stage = "error"
+                task.progress = None
                 task.updated_at = time_utc()
                 session.add(task)
                 session.commit()

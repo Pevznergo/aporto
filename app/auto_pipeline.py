@@ -127,10 +127,13 @@ Here is the transcript:
         except Exception:
             return []
 
-    def cut_clips(self, video_path: str, clips: List[Dict[str, Any]], output_dir: str) -> List[str]:
-        """Cut clips using ffmpeg, return list of created clip paths"""
+    def cut_clips(self, video_path: str, clips: List[Dict[str, Any]], output_dir: str, on_progress=None) -> List[str]:
+        """Cut clips using ffmpeg, return list of created clip paths.
+        on_progress(i, total) can be provided to track progress.
+        """
         os.makedirs(output_dir, exist_ok=True)
         created_clips = []
+        total = max(len(clips), 1)
         
         for i, clip in enumerate(clips, start=1):
             title = clip.get("title", f"clip{i}")
@@ -203,11 +206,22 @@ Here is the transcript:
                         result = subprocess.run(cmd, capture_output=True)
                         if result.returncode == 0:
                             created_clips.append(out_file)
+                        if on_progress:
+                            try:
+                                on_progress(i, total)
+                            except Exception:
+                                pass
                     elif len(valid_temps) == 1:
                         # Single valid temp
                         import shutil
                         shutil.copy2(valid_temps[0], out_file)
                         created_clips.append(out_file)
+                    
+                    if on_progress:
+                        try:
+                            on_progress(i, total)
+                        except Exception:
+                            pass
                     
                     # Cleanup temp files
                     for temp_file in temp_files:
