@@ -351,6 +351,28 @@ class VastManager:
     def _get_http_ip(self, inst: Dict) -> str:
         return inst.get("public_ipaddr") or inst.get("ip_addr") or inst.get("ip") or ""
 
+    def _get_mapped_host_port(self, inst: Dict, key: str) -> int:
+        """Return external HostPort mapped for a given internal port key like '5000/tcp'."""
+        try:
+            ports = inst.get("ports") or {}
+            entry = ports.get(key) or []
+            if isinstance(entry, list) and entry:
+                hp = entry[0].get("HostPort")
+                return int(hp) if hp else 0
+        except Exception:
+            pass
+        return 0
+
+    def _public_base_for_port(self, inst: Dict, internal_port: int) -> str:
+        """Build http://<public_ip>:<external_port> using Vast port mapping when present."""
+        ip = self._get_http_ip(inst)
+        if not ip:
+            return ""
+        mapped = self._get_mapped_host_port(inst, f"{internal_port}/tcp")
+        if mapped:
+            return f"http://{ip}:{mapped}"
+        return f"http://{ip}:{internal_port}"
+
     def upload_and_plan_paths(self, inst: Dict, local_path: str) -> Tuple[str, str]:
         """
         Upload local file to instance inbox and plan output path.
@@ -417,10 +439,10 @@ class VastManager:
         if self.upscale_url_override:
             url = self.upscale_url_override.rstrip('/') + "/upscale"
         else:
-            ip = self._get_http_ip(inst)
-            if not ip:
+            base = self._public_base_for_port(inst, 5000)
+            if not base:
                 raise RuntimeError("Instance public IP not found")
-            url = f"http://{ip}:5000/upscale"
+            url = f"{base}/upscale"
         r = requests.post(url, json={"input_path": remote_in, "output_path": remote_out}, timeout=30)
         if r.status_code not in (200, 202):
             raise RuntimeError(f"Failed to submit job: {r.text}")
@@ -432,8 +454,8 @@ class VastManager:
             base = self.upscale_url_override.rstrip('/')
             r = requests.get(f"{base}/job/{job_id}", timeout=10)
         else:
-            ip = self._get_http_ip(inst)
-            r = requests.get(f"http://{ip}:5000/job/{job_id}", timeout=10)
+            base = self._public_base_for_port(inst, 5000)
+            r = requests.get(f"{base}/job/{job_id}", timeout=10)
         if r.status_code != 200:
             return "failed"
         data = r.json()
