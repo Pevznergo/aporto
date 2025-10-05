@@ -1,0 +1,11 @@
+{
+  "client_id": "me",
+  "image": "nvidia/cuda:12.2.2-devel-ubuntu22.04",
+  "env": {
+    "PORT": "5000"
+  },
+  "disk": 50.0,
+  "onstart": "/workspace/setup_vastai.sh",
+  "runtype": "ssh_direc",
+  "cuda_v": 12.2
+}

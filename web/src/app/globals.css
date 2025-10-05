@@ -1,1 +1,21 @@
-*{box-sizing:border-box}body{margin:0}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;font-size:14px}th{background:#f4f4f4;text-align:left}input,select,button{padding:6px 8px;margin:4px}label{display:block;margin:8px 0}
+*{box-sizing:border-box}
+body{margin:0}
+
+/* Tables */
+table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #223046;padding:8px;font-size:14px;color:#e6eaf2}
+th{background:#0f1b2d;text-align:left}
+
+/* Form controls - dark theme */
+input,select,textarea,button{padding:8px 10px;margin:4px;border-radius:8px;border:1px solid #223046;background:#0b1220;color:#e6eaf2}
+input::placeholder,textarea::placeholder{color:#8a94a7}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.25)}
+button{background:#162033;cursor:pointer}
+button:hover{background:#1b2841}
+
+/* Links */
+a{color:#8ab4ff}
+a:hover{color:#a8c7ff}
+
+/* Labels */
+label{display:block;margin:8px 0;color:#cdd6e5}

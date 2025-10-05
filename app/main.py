@@ -15,14 +15,18 @@ except ImportError:
 
 from .db import init_db, get_session
 from .models import Task, TaskStatus
-from .schemas import CreateTask, TaskOut
-from .worker import start_workers, add_task_to_download, VIDEOS_DIR
+from .schemas import CreateTask, TaskOut, UpscaleTaskOut
+from .worker import start_workers, add_task_to_download, VIDEOS_DIR, CLIPS_UPSCALED_DIR, TO_UPSCALE_DIR, trigger_upscale_scan, list_upscale_tasks, retry_upscale_task
 
 app = FastAPI(title="Video Cutter Task Manager")
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+# Ensure directories for static mounts exist at import time
+for _dir in ("videos", "clips", "clips_upscaled"):
+    os.makedirs(os.path.join(BASE_DIR, _dir), exist_ok=True)
 
 # CORS for Next.js frontend
 origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
@@ -36,6 +40,7 @@ app.add_middleware(
 
 app.mount("/videos", StaticFiles(directory=os.path.join(BASE_DIR, "videos")), name="videos")
 app.mount("/clips", StaticFiles(directory=os.path.join(BASE_DIR, "clips")), name="clips")
+app.mount("/clips_upscaled", StaticFiles(directory=os.path.join(BASE_DIR, "clips_upscaled")), name="clips_upscaled")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
@@ -93,3 +98,44 @@ def retry_task(task_id: int, session: Session = Depends(get_session)):
     session.commit()
     add_task_to_download(task.id)
     return task
+
+
+# Upscale API
+@app.get("/api/upscale/tasks", response_model=list[UpscaleTaskOut])
+def api_list_upscale_tasks():
+    return list_upscale_tasks()
+
+
+@app.post("/api/upscale/scan")
+def api_scan_upscale():
+    trigger_upscale_scan()
+    return {"ok": True}
+
+
+@app.post("/api/upscale/tasks/{task_id}/retry", response_model=UpscaleTaskOut)
+def api_retry_upscale(task_id: int):
+    return retry_upscale_task(task_id)
+
+
+# Upscale settings and status
+from .upscale_config import get_upscale_settings, save_upscale_settings
+from .upscale_vast import VastManager
+
+@app.get("/api/upscale/settings")
+def api_get_upscale_settings():
+    return get_upscale_settings()
+
+
+@app.put("/api/upscale/settings")
+def api_put_upscale_settings(payload: dict):
+    return save_upscale_settings(payload)
+
+
+@app.get("/api/upscale/status")
+def api_get_upscale_status():
+    try:
+        vm = VastManager()
+        state = vm.get_status()
+    except Exception:
+        state = "unknown"
+    return {"state": state}

@@ -1,11 +1,15 @@
 from queue import Queue, Empty
 from threading import Thread, Event
 from sqlmodel import Session, select
-from .models import Task, TaskStatus
+from fastapi import HTTPException
+from .models import Task, TaskStatus, UpscaleTask, UpscaleStatus
 from .db import engine
 from .ytdlp_wrapper import download_video
 from .ffmpeg_wrapper import process_video
 from .auto_pipeline import AutoPipeline
+import os
+import time
+from datetime import datetime, timezone
 import os
 from datetime import datetime, timezone
 
@@ -17,12 +21,20 @@ def time_utc():
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 VIDEOS_DIR = os.path.abspath(os.path.join(BASE_DIR, "videos"))
 CLIPS_DIR = os.path.abspath(os.path.join(BASE_DIR, "clips"))
+CLIPS_UPSCALED_DIR = os.path.abspath(os.path.join(BASE_DIR, "clips_upscaled"))
+TO_UPSCALE_DIR = os.path.abspath(os.path.join(BASE_DIR, "to_upscale"))
 RAW_DIR = VIDEOS_DIR
 PROCESSED_DIR = VIDEOS_DIR
 
 
 download_queue: "Queue[int]" = Queue()
 process_queue: "Queue[int]" = Queue()
+
+# Upscale queues and control
+upscale_queue: "Queue[int]" = Queue()
+# Default is 2, but will be read dynamically from config
+UPSCALE_CONCURRENCY_DEFAULT = 2
+_active_upscale = 0
 
 stop_event = Event()
 
@@ -201,12 +213,193 @@ def start_workers():
     os.makedirs(RAW_DIR, exist_ok=True)
     os.makedirs(PROCESSED_DIR, exist_ok=True)
     os.makedirs(CLIPS_DIR, exist_ok=True)
+    os.makedirs(CLIPS_UPSCALED_DIR, exist_ok=True)
+    os.makedirs(TO_UPSCALE_DIR, exist_ok=True)
     enqueue_pending_from_db()
     t1 = Thread(target=download_worker, name="download_worker", daemon=True)
     t2 = Thread(target=process_worker, name="process_worker", daemon=True)
+    t3 = Thread(target=upscale_watcher, name="upscale_watcher", daemon=True)
+    t4 = Thread(target=upscale_worker, name="upscale_worker", daemon=True)
     t1.start()
     t2.start()
+    t3.start()
+    t4.start()
 
 
 def add_task_to_download(task_id: int):
     download_queue.put(task_id)
+
+
+# ========== Upscale support ==========
+from .upscale_vast import VastManager
+
+_vast = None
+
+
+def get_vast():
+    global _vast
+    if _vast is None:
+        _vast = VastManager()
+    return _vast
+
+
+def upscale_watcher():
+    """
+    Scan TO_UPSCALE_DIR periodically and enqueue new files as UpscaleTask.
+    """
+    last_seen = set()
+    while not stop_event.is_set():
+        try:
+            current = set()
+            for name in os.listdir(TO_UPSCALE_DIR):
+                path = os.path.join(TO_UPSCALE_DIR, name)
+                if os.path.isfile(path):
+                    current.add(path)
+                    if path not in last_seen:
+                        # Create task if not exists
+                        with Session(engine) as session:
+                            existing = session.exec(select(UpscaleTask).where(UpscaleTask.file_path == path)).first()
+                            if not existing:
+                                ut = UpscaleTask(file_path=path, status=UpscaleStatus.QUEUED, stage="queued", progress=0)
+                                session.add(ut)
+                                session.commit()
+                                session.refresh(ut)
+                                upscale_queue.put(ut.id)
+            last_seen = current
+            time.sleep(2.0)
+        except Exception:
+            time.sleep(2.0)
+
+
+def upscale_worker():
+    global _active_upscale
+    from .upscale_config import get_upscale_concurrency
+    vast = get_vast()
+    while not stop_event.is_set():
+        try:
+            task_id = upscale_queue.get(timeout=0.5)
+        except Empty:
+            # No pending, if none active — try to stop instance
+            if _active_upscale == 0:
+                try:
+                    vast.stop_instance_if_idle()
+                except Exception:
+                    pass
+            continue
+        with Session(engine) as session:
+            ut = session.get(UpscaleTask, task_id)
+            if not ut:
+                upscale_queue.task_done()
+                continue
+            try:
+                # Enforce concurrency (read dynamic value)
+                while _active_upscale >= get_upscale_concurrency() and not stop_event.is_set():
+                    time.sleep(0.5)
+                _active_upscale += 1
+
+                # Ensure instance
+                ut.stage = "ensuring_instance"
+                ut.status = UpscaleStatus.PROCESSING
+                ut.progress = 5
+                ut.updated_at = time_utc()
+                session.add(ut)
+                session.commit()
+
+                inst = vast.ensure_instance_running()
+                ut.vast_instance_id = str(inst.get("id"))
+                session.add(ut)
+                session.commit()
+
+                # Upload
+                ut.stage = "uploading"
+                ut.progress = 20
+                session.add(ut)
+                session.commit()
+                remote_in, remote_out = vast.upload_and_plan_paths(inst, ut.file_path)
+
+                # Submit
+                ut.stage = "processing"
+                ut.progress = 40
+                session.add(ut)
+                session.commit()
+                job_id = vast.submit_job(inst, remote_in, remote_out)
+                ut.vast_job_id = str(job_id)
+                session.add(ut)
+                session.commit()
+
+                # Poll
+                while True:
+                    status = vast.job_status(inst, job_id)
+                    if status == "processing":
+                        # Bump progress gradually 40..85
+                        ut.progress = min((ut.progress or 40) + 2, 85)
+                        ut.updated_at = time_utc()
+                        session.add(ut)
+                        session.commit()
+                        time.sleep(3)
+                    elif status == "completed":
+                        break
+                    else:
+                        raise RuntimeError(f"Upscale job failed: status={status}")
+
+                # Download
+                ut.stage = "downloading"
+                ut.progress = 90
+                session.add(ut)
+                session.commit()
+                local_out = vast.download_result(inst, remote_out, CLIPS_UPSCALED_DIR)
+                ut.result_path = local_out
+                ut.stage = "done"
+                ut.status = UpscaleStatus.DONE
+                ut.progress = 100
+                ut.updated_at = time_utc()
+                session.add(ut)
+                session.commit()
+
+            except Exception as e:
+                ut.status = UpscaleStatus.ERROR
+                ut.stage = "error"
+                ut.error = str(e)
+                ut.updated_at = time_utc()
+                session.add(ut)
+                session.commit()
+            finally:
+                _active_upscale = max(0, _active_upscale - 1)
+                upscale_queue.task_done()
+
+
+def trigger_upscale_scan():
+    # force scan by placing all files into queue if not yet queued
+    with Session(engine) as session:
+        for name in os.listdir(TO_UPSCALE_DIR):
+            path = os.path.join(TO_UPSCALE_DIR, name)
+            if not os.path.isfile(path):
+                continue
+            existing = session.exec(select(UpscaleTask).where(UpscaleTask.file_path == path)).first()
+            if not existing:
+                ut = UpscaleTask(file_path=path, status=UpscaleStatus.QUEUED, stage="queued", progress=0)
+                session.add(ut)
+                session.commit()
+                session.refresh(ut)
+                upscale_queue.put(ut.id)
+
+
+def list_upscale_tasks():
+    with Session(engine) as session:
+        items = session.exec(select(UpscaleTask).order_by(UpscaleTask.id.desc())).all()
+        return items
+
+
+def retry_upscale_task(task_id: int):
+    with Session(engine) as session:
+        ut = session.get(UpscaleTask, task_id)
+        if not ut:
+            raise HTTPException(status_code=404, detail="Upscale task not found")
+        ut.status = UpscaleStatus.QUEUED
+        ut.stage = "queued"
+        ut.progress = 0
+        ut.error = None
+        session.add(ut)
+        session.commit()
+        upscale_queue.put(ut.id)
+        return ut

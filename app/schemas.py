@@ -53,3 +53,18 @@ class TaskOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UpscaleTaskOut(BaseModel):
+    id: int
+    file_path: str
+    status: str
+    stage: Optional[str]
+    progress: Optional[int]
+    vast_instance_id: Optional[str]
+    vast_job_id: Optional[str]
+    result_path: Optional[str]
+    error: Optional[str]
+
+    class Config:
+        from_attributes = True

@@ -11,3 +11,4 @@ openai-whisper
 torch
 ffmpeg-python
 python-dotenv
+requests

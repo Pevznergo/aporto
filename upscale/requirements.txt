@@ -18,6 +18,7 @@ realesrgan>=0.2.5
 
 # SSH utilities
 paramiko>=2.11.0
+scp>=0.14.0
 
 # Web server
 flask>=2.0.0
