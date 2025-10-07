@@ -127,9 +127,10 @@ Here is the transcript:
         except Exception:
             return []
 
-    def cut_clips(self, video_path: str, clips: List[Dict[str, Any]], output_dir: str, on_progress=None) -> List[str]:
+    def cut_clips(self, video_path: str, clips: List[Dict[str, Any]], output_dir: str, on_progress=None, clip_suffix: str = "") -> List[str]:
         """Cut clips using ffmpeg, return list of created clip paths.
         on_progress(i, total) can be provided to track progress.
+        clip_suffix: additional suffix to append at the end of each clip filename (already sanitized).
         """
         os.makedirs(output_dir, exist_ok=True)
         created_clips = []
@@ -139,7 +140,8 @@ Here is the transcript:
             title = clip.get("title", f"clip{i}")
             safe_title = "".join(c for c in title if c.isalnum() or c in ("_", "-", ".", "!", "?", ":", ",", "'", "&", " ")).rstrip()
             safe_title = safe_title.replace(" ", "_")
-            out_file = os.path.join(output_dir, f"clip_{i}_{safe_title}.mp4")
+            suffix = f"_{clip_suffix}" if clip_suffix else ""
+            out_file = os.path.join(output_dir, f"clip_{i}_{safe_title}{suffix}.mp4")
             
             fragments = clip.get("fragments", [])
             if not fragments:
@@ -247,6 +249,14 @@ Here is the transcript:
         base_name = os.path.splitext(os.path.basename(video_path))[0]
         transcript_path = os.path.join(output_dir, f"{base_name}_transcript.json")
         clips_json_path = os.path.join(output_dir, f"{base_name}_clips.json")
+
+        # Compute suffix: first two words from base video title
+        def _first_two_words(name: str) -> str:
+            # replace separators with spaces, then split
+            cleaned = name.replace("_", " ").replace("-", " ")
+            parts = [p for p in cleaned.split() if p]
+            return "_".join(parts[:2]) if parts else ""
+        clip_suffix = _first_two_words(base_name)
         
         # 1. Transcribe
         transcript = self.transcribe_video(video_path, transcript_path)
@@ -254,7 +264,7 @@ Here is the transcript:
         # 2. Get clips from GPT
         clips = self.ask_gpt(transcript, clips_json_path)
         
-        # 3. Cut clips
-        clip_files = self.cut_clips(video_path, clips, output_dir)
+        # 3. Cut clips (append first two words of source title to each filename)
+        clip_files = self.cut_clips(video_path, clips, output_dir, clip_suffix=clip_suffix)
         
         return transcript_path, clips_json_path, clip_files

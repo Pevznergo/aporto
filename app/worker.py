@@ -293,6 +293,21 @@ def get_vast():
     return _vast
 
 
+def _stop_instance_if_fully_idle():
+    """Best-effort: stop instance when there is no work anywhere.
+    Calls VastManager.stop_instance_if_idle(), which enforces cooldown and activity windows.
+    """
+    vast = get_vast()
+    try:
+        if _active_upscale == 0 \
+           and upload_upscale_queue.empty() \
+           and process_upscale_queue.empty() \
+           and result_download_queue.empty():
+            vast.stop_instance_if_idle()
+    except Exception:
+        pass
+
+
 def upscale_watcher():
     """
     Scan TO_UPSCALE_DIR periodically and enqueue new files as UpscaleTask.
@@ -319,6 +334,9 @@ def upscale_watcher():
                                 session.refresh(ut)
                                 upload_upscale_queue.put(ut.id)
             last_seen = current
+            # If there are no files to upscale and queues are empty, consider stopping instance
+            if not current and upload_upscale_queue.empty() and process_upscale_queue.empty() and result_download_queue.empty() and _active_upscale == 0:
+                _stop_instance_if_fully_idle()
             time.sleep(2.0)
         except Exception:
             time.sleep(2.0)
@@ -330,7 +348,8 @@ def upload_upscale_worker():
         try:
             task_id = upload_upscale_queue.get(timeout=0.5)
         except Empty:
-            # try to stop instance if fully idle will be handled in process worker
+            # Attempt to stop instance if fully idle
+            _stop_instance_if_fully_idle()
             continue
         with Session(engine) as session:
             ut = session.get(UpscaleTask, task_id)
@@ -505,6 +524,7 @@ def result_download_worker():
         try:
             task_id = result_download_queue.get(timeout=0.5)
         except Empty:
+            _stop_instance_if_fully_idle()
             time.sleep(0.1)
             continue
         with Session(engine) as session:
@@ -557,6 +577,8 @@ def result_download_worker():
                 session.commit()
             finally:
                 result_download_queue.task_done()
+                # If this was the last pending work, consider stopping instance
+                _stop_instance_if_fully_idle()
 
 
 def retry_upscale_task(task_id: int):
