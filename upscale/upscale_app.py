@@ -117,29 +117,43 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
             '-s', str(UPSCALE_FACTOR),
             '--outscale', str(UPSCALE_FACTOR)
         ]
-        
+
         # Add denoise strength
         if DENOISE_STRENGTH != 0.5:  # 0.5 is default
             cmd.extend(['--denoise_strength', str(DENOISE_STRENGTH)])
-            
+
         # Add face enhancement
         if FACE_ENHANCEMENT:
             cmd.append('--face_enhance')
-            
+
         # Add model path if exists
         model_path = os.path.join('models', 'realesr-general-x4v3.pth')
         if os.path.exists(model_path):
             cmd.extend(['--model_path', model_path])
-        
+
+        # Ensure our sitecustomize.py is imported in the subprocess
+        def _find_patch_root() -> str:
+            here = Path(__file__).resolve()
+            # Walk upwards to find a directory containing sitecustomize.py
+            for p in [here.parent, *here.parents]:
+                if (p / 'sitecustomize.py').exists():
+                    return str(p)
+            return str(here.parent)
+
+        env = os.environ.copy()
+        patch_root = _find_patch_root()
+        existing_pp = env.get('PYTHONPATH', '')
+        env['PYTHONPATH'] = (patch_root if not existing_pp else patch_root + os.pathsep + existing_pp)
+
         print("Running Real-ESRGAN upscaling...")
         print(f"Command: {' '.join(cmd)}")
-        
-        # Run Real-ESRGAN
-        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        # Run Real-ESRGAN with patched PYTHONPATH so sitecustomize is auto-imported
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
         if result.returncode != 0:
             print(f"Real-ESRGAN failed: {result.stderr}")
             return False
-            
+
         print("Upscaling completed")
         
         # Reconstruct video from upscaled frames
