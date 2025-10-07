@@ -402,11 +402,14 @@ def process_upscale_worker():
             if not ut:
                 process_upscale_queue.task_done()
                 continue
+            acquired_slot = False
+            freed_slot = False
             try:
                 # Wait for GPU slot
                 while _active_upscale >= get_upscale_concurrency() and not stop_event.is_set():
                     time.sleep(0.5)
                 _active_upscale += 1
+                acquired_slot = True
 
                 # Submit
                 with _remote_lock:
@@ -447,18 +450,10 @@ def process_upscale_worker():
                 session.commit()
                 # Free GPU slot now to allow next GPU job to start while downloading happens
                 _active_upscale = max(0, _active_upscale - 1)
+                freed_slot = True
                 # Enqueue result download and finish this task in the GPU queue
                 result_download_queue.put(task_id)
-                process_upscale_queue.task_done()
-                continue
-                ut.progress = 100
-                ut.updated_at = time_utc()
-                session.add(ut)
-                session.commit()
-
-                # Cleanup remote path mapping
-                with _remote_lock:
-                    _remote_paths.pop(task_id, None)
+                # Cleanup remote path mapping will be done by result_download_worker after successful download
 
             except Exception as e:
                 ut.status = UpscaleStatus.ERROR
@@ -467,8 +462,13 @@ def process_upscale_worker():
                 ut.updated_at = time_utc()
                 session.add(ut)
                 session.commit()
+                # Free GPU slot on error
+                if acquired_slot and not freed_slot:
+                    _active_upscale = max(0, _active_upscale - 1)
+                # Best-effort cleanup mapping on error (no download will occur)
+                with _remote_lock:
+                    _remote_paths.pop(task_id, None)
             finally:
-                pass
                 process_upscale_queue.task_done()
 
 
