@@ -20,6 +20,9 @@ GFPGAN_WEIGHT_CANDIDATES = (
     'models/GFPGANv1.4.pth',
     'models/GFPGANv1.3.pth',
     'models/GFPGANv1.2.pth',
+    'model/GFPGANv1.4.pth',  # sometimes singular directory is used
+    'model/GFPGANv1.3.pth',
+    'model/GFPGANv1.2.pth',
     os.path.expanduser('~/.cache/gfpgan/GFPGANv1.4.pth'),
 )
 

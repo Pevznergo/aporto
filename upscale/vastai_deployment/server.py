@@ -19,10 +19,31 @@ app = Flask(__name__)
 jobs = {}
 job_counter = 0
 
+def _is_file_stable(path: str, checks: int = 3, interval: float = 1.0, timeout: float = 30.0) -> bool:
+    import time
+    last = (-1, -1)
+    start = time.time()
+    while checks > 0 and (time.time() - start) <= timeout:
+        try:
+            st = os.stat(path)
+            cur = (st.st_size, int(st.st_mtime))
+        except FileNotFoundError:
+            return False
+        if cur == last:
+            checks -= 1
+        else:
+            checks = 3
+            last = cur
+        time.sleep(interval)
+    return checks == 0
+
+
 def _ffprobe_video_ok(path: str) -> tuple[bool, str]:
     try:
         if not os.path.exists(path):
             return False, "Input file not found"
+        if not _is_file_stable(path):
+            return False, "Input file appears to be still uploading (not stable)"
         try:
             sz = os.path.getsize(path)
         except Exception:
