@@ -88,6 +88,11 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         # Validate input file
         if not os.path.exists(input_video_path) or os.path.getsize(input_video_path) == 0:
             raise Exception(f"Input video not found or empty: {input_video_path}")
+        try:
+            in_size = os.path.getsize(input_video_path)
+            print(f"Input file: {input_video_path} (size={in_size} bytes)")
+        except Exception:
+            print(f"Input file: {input_video_path} (size=unknown)")
 
         # Extract frames from video (OpenCV first, then robust ffmpeg fallback)
         print("Extracting video frames...")
@@ -120,6 +125,8 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
                 ]
                 r = subprocess.run(cmd, capture_output=True, text=True)
                 if r.returncode != 0:
+                    if r.stderr:
+                        print("ffmpeg decode error:\n" + r.stderr)
                     # Attempt a faststart remux and retry once
                     fixed = os.path.join(temp_dir, 'fixed_faststart.mp4')
                     r1 = subprocess.run([
@@ -132,12 +139,17 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
                             '-i', fixed, '-vsync', '0', os.path.join(out_dir, 'frame_%06d.png')
                         ], capture_output=True, text=True)
                         if r2.returncode != 0:
+                            if r2.stderr:
+                                print("ffmpeg retry after faststart failed:\n" + r2.stderr)
                             return 0
                     else:
+                        if r1.stderr:
+                            print("ffmpeg faststart remux failed:\n" + r1.stderr)
                         return 0
                 # Count frames
                 return sum(1 for f in os.listdir(out_dir) if f.lower().endswith('.png'))
-            except Exception:
+            except Exception as e:
+                print(f"ffmpeg exception: {e}")
                 return 0
 
         # Try OpenCV first
@@ -161,6 +173,13 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         # Fallback to ffmpeg if cv2 failed or extracted nothing
         if frame_idx == 0:
             print("OpenCV extraction failed or yielded 0 frames; falling back to ffmpeg...")
+            # Probe to expose detailed demuxer errors
+            try:
+                probe = subprocess.run(['ffmpeg', '-v', 'error', '-hide_banner', '-i', input_video_path, '-f', 'null', '-'], capture_output=True, text=True)
+                if probe.stderr:
+                    print("ffmpeg probe:\n" + probe.stderr)
+            except Exception:
+                pass
             frame_idx = _extract_with_ffmpeg(input_video_path, frames_dir)
             if fps <= 0.0:
                 fps = _ffprobe_fps(input_video_path)

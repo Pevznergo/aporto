@@ -5,6 +5,7 @@ import subprocess
 import requests
 import random
 import threading
+import shlex
 from typing import Tuple, Dict
 
 VAST_API_URL = "https://console.vast.ai/api/v0"
@@ -387,6 +388,11 @@ class VastManager:
     def upload_and_plan_paths(self, inst: Dict, local_path: str) -> Tuple[str, str]:
         """
         Upload local file to instance inbox and plan output path.
+        Safe upload strategy:
+          1) Upload to a temporary path under inbox (hidden .*.part)
+          2) Validate size matches local file size
+          3) Validate ffprobe can read the video stream
+          4) Atomically move temp file to final path
         Returns (remote_input_path, remote_output_path)
         """
         ssh_host, ssh_port, user = self._get_ssh_info(inst)
@@ -394,6 +400,11 @@ class VastManager:
         filename = os.path.basename(os.path.normpath(local_path))
         if not filename:
             raise RuntimeError(f"Invalid local_path: {local_path}")
+        # Local size for validation
+        try:
+            local_size = os.path.getsize(local_path)
+        except OSError as e:
+            raise RuntimeError(f"Failed to stat local file '{local_path}': {e}")
         # Allow explicit override of inbox/outbox via env
         inbox_override = os.getenv("VAST_REMOTE_INBOX")
         outbox_override = os.getenv("VAST_REMOTE_OUTBOX")
@@ -406,6 +417,7 @@ class VastManager:
             inbox = f"{upbase}/inbox"
             outbox = f"{upbase}/outbox"
         remote_in = f"{inbox}/{filename}"
+        remote_tmp = f"{inbox}/.{filename}.part"
         remote_out = f"{outbox}/{filename}"
         # Wait for SSH to be ready
         if not self._wait_for_ssh(ssh_host, ssh_port, user, timeout=180.0):
@@ -426,6 +438,7 @@ class VastManager:
             inbox = f"{upbase}/inbox"
             outbox = f"{upbase}/outbox"
             remote_in = f"{inbox}/{filename}"
+            remote_tmp = f"{inbox}/.{filename}.part"
             remote_out = f"{outbox}/{filename}"
             if not _mkdir(inbox, outbox):
                 # Fallback to $HOME/upscale
@@ -433,17 +446,54 @@ class VastManager:
                 inbox = f"{upbase}/inbox"
                 outbox = f"{upbase}/outbox"
                 remote_in = f"{inbox}/{filename}"
+                remote_tmp = f"{inbox}/.{filename}.part"
                 remote_out = f"{outbox}/{filename}"
                 if not _mkdir(inbox, outbox):
                     raise RuntimeError("Failed to create remote inbox/outbox directories")
-        # scp upload (non-interactive, with options)
-        scp_cmd = ["scp", "-P", str(ssh_port), *self._ssh_common_opts(), local_path, f"{user}@{ssh_host}:{remote_in}"]
-        print(f"[upscale] scp upload to: {user}@{ssh_host}:{remote_in}")
+        # scp upload to temporary path (non-interactive, with options)
+        scp_cmd = ["scp", "-P", str(ssh_port), *self._ssh_common_opts(), local_path, f"{user}@{ssh_host}:{remote_tmp}"]
+        print(f"[upscale] scp upload to temp: {user}@{ssh_host}:{remote_tmp}")
         result = subprocess.run(scp_cmd, capture_output=True, text=True)
         # Mark activity
         self._last_activity_ts = time.time()
         if result.returncode != 0:
             raise RuntimeError(f"scp upload failed: {result.stderr or result.stdout}")
+        # Validate remote size
+        size_cmd = [
+            "ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}",
+            f"test -f {shlex.quote(remote_tmp)} && wc -c < {shlex.quote(remote_tmp)}"
+        ]
+        sz = subprocess.run(size_cmd, capture_output=True, text=True)
+        if sz.returncode != 0:
+            # Clean up temp on failure
+            subprocess.run(["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"rm -f {shlex.quote(remote_tmp)}"], capture_output=True, text=True)
+            raise RuntimeError(f"Remote size check failed for {remote_tmp}: {sz.stderr or sz.stdout}")
+        try:
+            remote_size = int(sz.stdout.strip())
+        except Exception:
+            remote_size = -1
+        if remote_size != local_size:
+            subprocess.run(["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"rm -f {shlex.quote(remote_tmp)}"], capture_output=True, text=True)
+            raise RuntimeError(f"Remote file size mismatch: local={local_size} bytes, remote={remote_size} bytes")
+        # Validate video readability via ffprobe on remote
+        probe_cmd = [
+            "ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}",
+            f"ffprobe -v error -hide_banner -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 {shlex.quote(remote_tmp)}"
+        ]
+        probe = subprocess.run(probe_cmd, capture_output=True, text=True)
+        if probe.returncode != 0:
+            # Print detailed probe error (stderr) and cleanup
+            err = probe.stderr or probe.stdout
+            subprocess.run(["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"rm -f {shlex.quote(remote_tmp)}"], capture_output=True, text=True)
+            raise RuntimeError(f"ffprobe failed on uploaded file: {err}")
+        # Atomically move temp to final inbox path
+        mv_cmd = ["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"mv -f {shlex.quote(remote_tmp)} {shlex.quote(remote_in)}"]
+        mv = subprocess.run(mv_cmd, capture_output=True, text=True)
+        if mv.returncode != 0:
+            # Best-effort cleanup
+            subprocess.run(["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"rm -f {shlex.quote(remote_tmp)}"], capture_output=True, text=True)
+            raise RuntimeError(f"Failed to move uploaded file into inbox: {mv.stderr or mv.stdout}")
+        print(f"[upscale] upload validated and moved into inbox: {remote_in}")
         return remote_in, remote_out
 
     def submit_job(self, inst: Dict, remote_in: str, remote_out: str) -> str:
