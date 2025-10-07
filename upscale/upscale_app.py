@@ -84,29 +84,94 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         os.makedirs(frames_dir, exist_ok=True)
         os.makedirs(output_frames_dir, exist_ok=True)
         
-        # Extract frames from video
+        # Validate input file
+        if not os.path.exists(input_video_path) or os.path.getsize(input_video_path) == 0:
+            raise Exception(f"Input video not found or empty: {input_video_path}")
+
+        # Extract frames from video (OpenCV first, then robust ffmpeg fallback)
         print("Extracting video frames...")
-        cap = cv2.VideoCapture(input_video_path)
-        if not cap.isOpened():
-            raise Exception("Error opening video file")
-        
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        print(f"Video FPS: {fps}, Total frames: {frame_count}")
-        
-        # Save frames as images
+
+        def _ffprobe_fps(path: str) -> float:
+            try:
+                probe = subprocess.run([
+                    'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                    '-show_entries', 'stream=avg_frame_rate',
+                    '-of', 'default=nokey=1:noprint_wrappers=1', path
+                ], capture_output=True, text=True)
+                if probe.returncode == 0 and probe.stdout.strip():
+                    val = probe.stdout.strip()
+                    if '/' in val:
+                        num, den = val.split('/')
+                        num = float(num or 0.0)
+                        den = float(den or 1.0)
+                        return num / den if den else 0.0
+                    return float(val)
+            except Exception:
+                pass
+            return 0.0
+
+        def _extract_with_ffmpeg(path: str, out_dir: str) -> int:
+            # Try to extract frames with ffmpeg (more robust for malformed moov)
+            try:
+                cmd = [
+                    'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+                    '-i', path, '-vsync', '0', os.path.join(out_dir, 'frame_%06d.png')
+                ]
+                r = subprocess.run(cmd, capture_output=True, text=True)
+                if r.returncode != 0:
+                    # Attempt a faststart remux and retry once
+                    fixed = os.path.join(temp_dir, 'fixed_faststart.mp4')
+                    r1 = subprocess.run([
+                        'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+                        '-i', path, '-c', 'copy', '-movflags', '+faststart', fixed
+                    ], capture_output=True, text=True)
+                    if r1.returncode == 0:
+                        r2 = subprocess.run([
+                            'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+                            '-i', fixed, '-vsync', '0', os.path.join(out_dir, 'frame_%06d.png')
+                        ], capture_output=True, text=True)
+                        if r2.returncode != 0:
+                            return 0
+                    else:
+                        return 0
+                # Count frames
+                return sum(1 for f in os.listdir(out_dir) if f.lower().endswith('.png'))
+            except Exception:
+                return 0
+
+        # Try OpenCV first
+        fps = 0.0
         frame_idx = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-                
-            frame_path = os.path.join(frames_dir, f"frame_{frame_idx:06d}.png")
-            cv2.imwrite(frame_path, frame)
-            frame_idx += 1
-        
-        cap.release()
-        print(f"Extracted {frame_idx} frames")
+        cap = cv2.VideoCapture(input_video_path)
+        if cap.isOpened():
+            fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            print(f"Video FPS (cv2): {fps}, Total frames (cv2): {frame_count}")
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                frame_path = os.path.join(frames_dir, f"frame_{frame_idx:06d}.png")
+                cv2.imwrite(frame_path, frame)
+                frame_idx += 1
+            cap.release()
+
+        # Fallback to ffmpeg if cv2 failed or extracted nothing
+        if frame_idx == 0:
+            print("OpenCV extraction failed or yielded 0 frames; falling back to ffmpeg...")
+            frame_idx = _extract_with_ffmpeg(input_video_path, frames_dir)
+            if fps <= 0.0:
+                fps = _ffprobe_fps(input_video_path)
+
+        if frame_idx == 0:
+            raise Exception("Failed to extract frames from input video (cv2 and ffmpeg)")
+
+        if fps <= 0.0:
+            # Default to 30 FPS if probing failed; we'll still produce a playable video
+            fps = 30.0
+
+        print(f"Extracted {frame_idx} frames (fps={fps})")
         
         # Prepare Real-ESRGAN command
         cmd = [
