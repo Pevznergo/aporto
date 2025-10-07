@@ -106,25 +106,28 @@ def main() -> int:
         w = _require_gfpgan_weights()
         try:
             from gfpgan import GFPGANer
-            face_enhancer = GFPGANer(model_path=w, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=restorer)
+            face_enhancer = GFPGANer(model_path=w, upscale=int(args.outscale), arch='clean', channel_multiplier=2, bg_upsampler=restorer)
+            print(f"GFPGAN enabled with weights: {w}, upscale={int(args.outscale)}")
         except Exception as e:
             raise SystemExit(f"Failed to initialize GFPGAN with weights at {w}: {e}")
 
     # Process images
     count = 0
+    gfpgan_ok = 0
+    gfpgan_fallback = 0
+    esr_only = 0
+
     for fp in files:
         img = cv2.imread(fp, cv2.IMREAD_COLOR)
         if img is None:
             print(f"Skipping unreadable image: {fp}")
             continue
         try:
+            used_gfpgan = False
             if face_enhancer is not None:
                 try:
-                    output, _ = face_enhancer.enhance(img, has_aligned=False, only_center_face=False, paste_back=True)
-                    # Adjust final outscale if needed
-                    if int(args.outscale) != netscale:
-                        h0, w0 = img.shape[:2]
-                        output = cv2.resize(output, (int(w0 * int(args.outscale)), int(h0 * int(args.outscale))), interpolation=cv2.INTER_LANCZOS4)
+                    _, _, output = face_enhancer.enhance(img, has_aligned=False, only_center_face=False, paste_back=True)
+                    used_gfpgan = True
                 except Exception as ge:
                     # Per-frame fallback: use RealESRGAN if GFPGAN fails on this image
                     print(f"GFPGAN failed for {fp}: {ge}; falling back to RealESRGAN for this frame")
@@ -140,10 +143,24 @@ def main() -> int:
             print(f"Failed to write output: {out_path}")
             continue
         count += 1
+        if face_enhancer is not None:
+            if used_gfpgan:
+                gfpgan_ok += 1
+            else:
+                gfpgan_fallback += 1
+        else:
+            esr_only += 1
 
     if count == 0:
         print("No images were processed successfully.")
         return 1
+
+    # Summary logging
+    if face_enhancer is not None:
+        print(f"GFPGAN summary — ok: {gfpgan_ok}, fallback_to_esrgan: {gfpgan_fallback}, total: {count}")
+    else:
+        print(f"GFPGAN disabled — ESRGAN-only frames: {esr_only}, total: {count}")
+
     print(f"Enhanced {count} images to: {out_dir}")
     return 0
 
