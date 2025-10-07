@@ -9,6 +9,7 @@ import sys
 import time
 import json
 import threading
+import subprocess
 from flask import Flask, request, jsonify, send_file
 from upscale_app import upscale_video_with_realesrgan
 
@@ -17,6 +18,28 @@ app = Flask(__name__)
 # In-memory job tracking
 jobs = {}
 job_counter = 0
+
+def _ffprobe_video_ok(path: str) -> tuple[bool, str]:
+    try:
+        if not os.path.exists(path):
+            return False, "Input file not found"
+        try:
+            sz = os.path.getsize(path)
+        except Exception:
+            sz = 0
+        if sz <= 0:
+            return False, "Input file is empty"
+        cmd = [
+            'ffprobe', '-v', 'error', '-hide_banner',
+            '-select_streams', 'v:0', '-show_entries', 'stream=codec_name',
+            '-of', 'csv=p=0', path
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0 and r.stdout.strip():
+            return True, ''
+        return False, (r.stderr or r.stdout or 'ffprobe failed')
+    except Exception as e:
+        return False, str(e)
 
 @app.route('/upscale', methods=['POST'])
 def upscale_video():
@@ -47,6 +70,10 @@ def upscale_video():
         
         if not os.path.exists(input_path):
             return jsonify({"error": "Input file not found"}), 404
+        
+        ok, err = _ffprobe_video_ok(input_path)
+        if not ok:
+            return jsonify({"error": f"Invalid input video: {err}"}), 400
         
         # Create a new job
         job_counter += 1
