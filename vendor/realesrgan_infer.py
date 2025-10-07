@@ -16,6 +16,23 @@ import cv2
 
 import torch
 
+GFPGAN_WEIGHT_CANDIDATES = (
+    'models/GFPGANv1.4.pth',
+    'models/GFPGANv1.3.pth',
+    'models/GFPGANv1.2.pth',
+    os.path.expanduser('~/.cache/gfpgan/GFPGANv1.4.pth'),
+)
+
+def _find_gfpgan_weights() -> str | None:
+    # Allow override via env var
+    env = os.getenv('GFPGAN_MODEL_PATH')
+    if env and os.path.isfile(env):
+        return env
+    for p in GFPGAN_WEIGHT_CANDIDATES:
+        if p and os.path.isfile(p):
+            return p
+    return None
+
 try:
     from realesrgan.utils import RealESRGANer
 except Exception as e:
@@ -85,7 +102,12 @@ def main() -> int:
     if args.face_enhance:
         try:
             from gfpgan import GFPGANer
-            face_enhancer = GFPGANer(model_path=None, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=restorer)
+            w = _find_gfpgan_weights()
+            if not w:
+                print("GFPGAN weights not found (models/GFPGANv1.x.pth). Face enhancement will be skipped.")
+            else:
+                # Use background upsampler (RealESRGAN) and GFPGAN weights
+                face_enhancer = GFPGANer(model_path=w, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=restorer)
         except Exception as e:
             print(f"GFPGAN face enhancement disabled (failed to initialize): {e}")
             face_enhancer = None
@@ -100,6 +122,10 @@ def main() -> int:
         try:
             if face_enhancer is not None:
                 output, _ = face_enhancer.enhance(img, has_aligned=False, only_center_face=False, paste_back=True)
+                # Adjust final outscale if needed
+                if int(args.outscale) != netscale:
+                    h0, w0 = img.shape[:2]
+                    output = cv2.resize(output, (int(w0 * int(args.outscale)), int(h0 * int(args.outscale))), interpolation=cv2.INTER_LANCZOS4)
             else:
                 output, _ = restorer.enhance(img, outscale=int(args.outscale))
         except Exception as e:
