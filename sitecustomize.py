@@ -43,6 +43,7 @@ def _patch_basicsr_registry() -> None:
             # Idempotent: same object => no-op
             if existing is func_or_class:
                 return func_or_class
+
             # Consider objects equivalent across reloads if module+name match
             if (
                 getattr(existing, "__module__", None)
@@ -51,6 +52,24 @@ def _patch_basicsr_registry() -> None:
                 == getattr(func_or_class, "__name__", None)
             ):
                 return func_or_class
+
+            # Special-case: module executed as __main__ via -m runpy.
+            # If classes share the same source file and name, treat as equivalent.
+            try:
+                import inspect, os
+                def _origin(cls):
+                    try:
+                        fp = inspect.getsourcefile(cls) or inspect.getfile(cls)
+                    except Exception:
+                        fp = None
+                    return os.path.realpath(fp) if fp else None
+                same_name = getattr(existing, "__name__", None) == getattr(func_or_class, "__name__", None)
+                if same_name and _origin(existing) and _origin(func_or_class) and _origin(existing) == _origin(func_or_class):
+                    return func_or_class
+            except Exception:
+                # If origin detection fails, fall through to protective error
+                pass
+
             # Different object under the same name: keep protective error
             raise KeyError(
                 f"An object named '{key}' was already registered in '{self._name}' registry "
