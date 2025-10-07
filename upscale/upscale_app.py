@@ -12,6 +12,7 @@ import cv2
 import tempfile
 import shutil
 import json
+import importlib.util
 from pathlib import Path
 
 # Configuration
@@ -178,9 +179,27 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
             print(f"No frames found to enhance in: {frames_dir}")
             return False
         
-        # Prepare Real-ESRGAN command (official inference CLI)
-        cmd = [
-            sys.executable, '-m', 'realesrgan.inference_realesrgan',
+        # Build Real-ESRGAN command with fallbacks depending on installed version
+        def _realesrgan_cmd_base() -> list[str]:
+            # Prefer module path if available
+            try:
+                if importlib.util.find_spec('realesrgan.inference_realesrgan') is not None:
+                    return [sys.executable, '-m', 'realesrgan.inference_realesrgan']
+            except Exception:
+                pass
+            try:
+                # Some builds provide __main__
+                if importlib.util.find_spec('realesrgan') is not None:
+                    return [sys.executable, '-m', 'realesrgan']
+            except Exception:
+                pass
+            # Fallback to console script if present
+            exe = shutil.which('realesrgan')
+            if exe:
+                return [exe]
+            raise RuntimeError("Real-ESRGAN CLI not found. Ensure 'realesrgan' package is installed in the runtime environment.")
+
+        cmd = _realesrgan_cmd_base() + [
             '-i', frames_dir,
             '-o', output_frames_dir,
             '-n', 'realesr-general-x4v3',
@@ -218,9 +237,15 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         print(f"Command: {' '.join(cmd)}")
 
         # Run Real-ESRGAN with patched PYTHONPATH so sitecustomize is auto-imported
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        except Exception as e:
+            print(f"Failed to execute Real-ESRGAN command: {e}")
+            print(f"Tried command: {' '.join(cmd)}")
+            return False
         if result.returncode != 0:
             print(f"Real-ESRGAN failed: {result.stderr or result.stdout}")
+            print(f"Command was: {' '.join(cmd)}")
             return False
 
         # Verify outputs exist
