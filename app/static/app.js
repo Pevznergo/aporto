@@ -57,5 +57,41 @@ tasksEl.addEventListener('click', async (e) => {
   }
 });
 
-setInterval(refresh, 3000);
-window.addEventListener('load', refresh);
+// Downloads list
+async function refreshDownloads() {
+  const resp = await fetch('/api/downloads');
+  if (!resp.ok) return;
+  const data = await resp.json();
+  const tbody = document.getElementById('downloads-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  for (const d of data) {
+    const tr = document.createElement('tr');
+    const title = d.title ? d.title : '(без названия)';
+    tr.innerHTML = `
+      <td>${d.id}</td>
+      <td>${title}</td>
+      <td><a href="${d.url}" target="_blank">ссылка</a></td>
+      <td><button class="del-download" data-id="${d.id}">🗑️</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+// Delete download row
+const downloadsBody = document.getElementById('downloads-body');
+if (downloadsBody) {
+  downloadsBody.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button.del-download');
+    if (!btn) return;
+    const id = btn.getAttribute('data-id');
+    const resp = await fetch(`/api/downloads/${id}`, { method: 'DELETE' });
+    if (!resp.ok) {
+      alert('Не удалось удалить запись');
+    }
+    await refreshDownloads();
+  });
+}
+
+setInterval(() => { refresh(); refreshDownloads(); }, 3000);
+window.addEventListener('load', () => { refresh(); refreshDownloads(); });

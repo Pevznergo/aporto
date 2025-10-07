@@ -14,7 +14,7 @@ except ImportError:
     pass  # dotenv is optional
 
 from .db import init_db, get_session
-from .models import Task, TaskStatus
+from .models import Task, TaskStatus, UpscaleTask, UpscaleStatus, DownloadedVideo
 from .schemas import CreateTask, TaskOut, UpscaleTaskOut
 from .worker import start_workers, add_task_to_download, VIDEOS_DIR, CLIPS_UPSCALED_DIR, TO_UPSCALE_DIR, trigger_upscale_scan, list_upscale_tasks, retry_upscale_task, delete_upscale_task
 
@@ -73,6 +73,10 @@ def get_task(task_id: int, session: Session = Depends(get_session)):
 
 @app.post("/api/tasks", response_model=TaskOut)
 def create_task(payload: CreateTask, session: Session = Depends(get_session)):
+    # Reject if URL already downloaded and present in the saved list
+    existing = session.exec(select(DownloadedVideo).where(DownloadedVideo.url == payload.url)).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Это видео уже было скачано ранее")
     task = Task(
         url=payload.url,
         mode=(payload.mode or "simple"),
@@ -99,6 +103,21 @@ def retry_task(task_id: int, session: Session = Depends(get_session)):
     add_task_to_download(task.id)
     return task
 
+
+# Downloads registry API
+@app.get("/api/downloads")
+def api_list_downloads(session: Session = Depends(get_session)):
+    items = session.exec(select(DownloadedVideo).order_by(DownloadedVideo.id.desc())).all()
+    return [{"id": d.id, "url": d.url, "title": d.title, "created_at": d.created_at.isoformat()} for d in items]
+
+@app.delete("/api/downloads/{item_id}")
+def api_delete_download(item_id: int, session: Session = Depends(get_session)):
+    d = session.get(DownloadedVideo, item_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    session.delete(d)
+    session.commit()
+    return {"ok": True}
 
 # Upscale API
 @app.get("/api/upscale/tasks", response_model=list[UpscaleTaskOut])

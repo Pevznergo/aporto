@@ -129,6 +129,15 @@ def download_worker():
                 task.video_id = video_id
                 task.original_filename = title
                 task.downloaded_path = file_path
+                # Save to downloads registry (dedupe by URL)
+                try:
+                    from .models import DownloadedVideo
+                    exists = session.exec(select(DownloadedVideo).where(DownloadedVideo.url == task.url)).first()
+                    if not exists:
+                        session.add(DownloadedVideo(url=task.url, title=title))
+                        session.commit()
+                except Exception:
+                    pass
                 task.status = TaskStatus.QUEUED_PROCESS
                 task.stage = "queued_process"
                 task.progress = 25
