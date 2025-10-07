@@ -450,6 +450,26 @@ class VastManager:
                 remote_out = f"{outbox}/{filename}"
                 if not _mkdir(inbox, outbox):
                     raise RuntimeError("Failed to create remote inbox/outbox directories")
+        # Ensure local file is stable before upload
+        def _is_local_stable(path: str, checks: int = 3, interval: float = 1.0, timeout: float = 30.0) -> bool:
+            start = time.time()
+            last = (-1, -1)
+            while checks > 0 and (time.time() - start) <= timeout:
+                try:
+                    st = os.stat(path)
+                    cur = (st.st_size, int(st.st_mtime))
+                except FileNotFoundError:
+                    return False
+                if cur == last:
+                    checks -= 1
+                else:
+                    checks = 3
+                    last = cur
+                time.sleep(interval)
+            return checks == 0
+        if not _is_local_stable(local_path):
+            raise RuntimeError(f"Local file appears to be still writing: {local_path}")
+
         # scp upload to temporary path (non-interactive, with options)
         scp_cmd = ["scp", "-P", str(ssh_port), *self._ssh_common_opts(), local_path, f"{user}@{ssh_host}:{remote_tmp}"]
         print(f"[upscale] scp upload to temp: {user}@{ssh_host}:{remote_tmp}")
@@ -458,7 +478,7 @@ class VastManager:
         self._last_activity_ts = time.time()
         if result.returncode != 0:
             raise RuntimeError(f"scp upload failed: {result.stderr or result.stdout}")
-        # Validate remote size
+        # Validate remote size with tolerance for post-upload local growth
         size_cmd = [
             "ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}",
             f"test -f {shlex.quote(remote_tmp)} && wc -c < {shlex.quote(remote_tmp)}"
@@ -472,9 +492,22 @@ class VastManager:
             remote_size = int(sz.stdout.strip())
         except Exception:
             remote_size = -1
-        if remote_size != local_size:
-            subprocess.run(["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"rm -f {shlex.quote(remote_tmp)}"], capture_output=True, text=True)
-            raise RuntimeError(f"Remote file size mismatch: local={local_size} bytes, remote={remote_size} bytes")
+        # Re-stat local after upload
+        try:
+            local_size_after = os.path.getsize(local_path)
+        except Exception:
+            local_size_after = local_size
+        if remote_size != local_size_after:
+            # Small grace: retry reading remote size once after 1s
+            time.sleep(1.0)
+            sz2 = subprocess.run(size_cmd, capture_output=True, text=True)
+            try:
+                remote_size2 = int((sz2.stdout or '').strip()) if sz2.returncode == 0 else remote_size
+            except Exception:
+                remote_size2 = remote_size
+            if remote_size2 != local_size_after:
+                subprocess.run(["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"rm -f {shlex.quote(remote_tmp)}"], capture_output=True, text=True)
+                raise RuntimeError(f"Remote file size mismatch: local={local_size_after} bytes, remote={remote_size2} bytes")
         # Validate video readability via ffprobe on remote
         probe_cmd = [
             "ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}",

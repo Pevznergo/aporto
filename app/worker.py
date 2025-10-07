@@ -340,7 +340,7 @@ def upload_upscale_worker():
             try:
                 # Ensure instance
                 ut.stage = "ensuring_instance"
-                ut.status = UpscaleStatus.PROCESSING
+                # Keep status in QUEUED until actual GPU processing begins
                 ut.progress = 5
                 ut.updated_at = time_utc()
                 session.add(ut)
@@ -368,6 +368,8 @@ def upload_upscale_worker():
                 ut.stage = "queued_gpu"
                 ut.progress = 35
                 ut.updated_at = time_utc()
+                # Keep status queued while waiting for GPU slot
+                ut.status = UpscaleStatus.QUEUED
                 session.add(ut)
                 session.commit()
                 process_upscale_queue.put(task_id)
@@ -420,6 +422,7 @@ def process_upscale_worker():
 
                 inst = vast.ensure_instance_running()
                 ut.stage = "processing"
+                ut.status = UpscaleStatus.PROCESSING
                 ut.progress = 40
                 session.add(ut)
                 session.commit()
