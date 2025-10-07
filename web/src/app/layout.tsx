@@ -1,6 +1,5 @@
 import './globals.css'
 import type { Metadata } from 'next'
-// @ts-expect-error Server Component imports Client Component
 import VastStatus from '@/components/VastStatus'
 
 export const metadata: Metadata = {
@@ -17,7 +16,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <h1 style={{ margin: 0, fontSize: 20, letterSpacing: 0.5 }}>Aporto Studio</h1>
               <nav style={{ display: 'flex', alignItems: 'center', gap: 12, opacity: 0.9, fontSize: 13 }}>
                 <span>AI Video Tools</span>
-                {/* @ts-expect-error Server Component imports Client Component */}
                 <VastStatus />
               </nav>
             </header>
