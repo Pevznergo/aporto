@@ -172,14 +172,18 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
             fps = 30.0
 
         print(f"Extracted {frame_idx} frames (fps={fps})")
+
+        # Sanity check: ensure frames exist before invoking ESRGAN
+        if not any(fn.lower().endswith(('.png', '.jpg', '.jpeg')) for fn in os.listdir(frames_dir)):
+            print(f"No frames found to enhance in: {frames_dir}")
+            return False
         
-        # Prepare Real-ESRGAN command
+        # Prepare Real-ESRGAN command (official inference CLI)
         cmd = [
-            sys.executable, '-m', 'realesrgan.archs.srvgg_arch',
+            sys.executable, '-m', 'realesrgan.inference_realesrgan',
             '-i', frames_dir,
             '-o', output_frames_dir,
             '-n', 'realesr-general-x4v3',
-            '-s', str(UPSCALE_FACTOR),
             '--outscale', str(UPSCALE_FACTOR)
         ]
 
@@ -215,7 +219,16 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         # Run Real-ESRGAN with patched PYTHONPATH so sitecustomize is auto-imported
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
         if result.returncode != 0:
-            print(f"Real-ESRGAN failed: {result.stderr}")
+            print(f"Real-ESRGAN failed: {result.stderr or result.stdout}")
+            return False
+
+        # Verify outputs exist
+        if not os.path.isdir(output_frames_dir) or not any(fn.lower().endswith(('.png', '.jpg', '.jpeg')) for fn in os.listdir(output_frames_dir)):
+            print("Real-ESRGAN finished without producing frames.")
+            if result.stdout:
+                print("STDOUT:\n" + result.stdout)
+            if result.stderr:
+                print("STDERR:\n" + result.stderr)
             return False
 
         print("Upscaling completed")
@@ -225,8 +238,7 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         
         # Get dimensions of first upscaled frame
         output_frame_files = sorted(os.listdir(output_frames_dir))
-        if not output_frame_files:
-            raise Exception("No upscaled frames found")
+        
             
         first_frame_path = os.path.join(output_frames_dir, output_frame_files[0])
         first_frame = cv2.imread(first_frame_path)
