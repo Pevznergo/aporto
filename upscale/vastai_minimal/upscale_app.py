@@ -220,7 +220,15 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
                     return [str(sibling)]
             except Exception:
                 pass
-            raise RuntimeError("Real-ESRGAN CLI not found. Ensure 'realesrgan' package is installed in the runtime environment.")
+            # Final fallback: vendor script in repo
+            try:
+                root = _find_patch_root()
+                vendor = os.path.join(root, 'vendor', 'realesrgan_infer.py')
+                if os.path.isfile(vendor):
+                    return [sys.executable, vendor]
+            except Exception:
+                pass
+            raise RuntimeError("Real-ESRGAN CLI not found. Ensure 'realesrgan' package or vendor script is available.")
 
         cmd = _realesrgan_cmd_base() + [
             '-i', frames_dir,

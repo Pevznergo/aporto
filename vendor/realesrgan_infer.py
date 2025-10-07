@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""
+Vendorized lightweight Real-ESRGAN inference for directory of images.
+Compatible with 'realesr-general-x4v3' model. Supports optional GFPGAN face enhancement.
+
+Usage example:
+  python realesrgan_infer.py -i /path/to/frames -o /path/to/out -n realesr-general-x4v3 --outscale 4 \
+    [--model_path models/realesr-general-x4v3.pth] [--face_enhance]
+"""
+from __future__ import annotations
+import argparse
+import os
+import sys
+import glob
+import cv2
+
+import torch
+
+try:
+    from realesrgan.utils import RealESRGANer
+except Exception as e:
+    print(f"Failed to import RealESRGANer from realesrgan.utils: {e}")
+    sys.exit(1)
+
+try:
+    from realesrgan.archs.srvgg_arch import SRVGGNetCompact
+except Exception as e:
+    print(f"Failed to import SRVGGNetCompact: {e}")
+    sys.exit(1)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Real-ESRGAN inference (vendor)")
+    p.add_argument('-i', '--input', required=True, help='Input directory of images')
+    p.add_argument('-o', '--output', required=True, help='Output directory for enhanced images')
+    p.add_argument('-n', '--model_name', default='realesr-general-x4v3', help='Model name')
+    p.add_argument('--model_path', default=None, help='Path to model weights (.pth)')
+    p.add_argument('--outscale', type=int, default=4, help='Final upscaling factor for output saving')
+    p.add_argument('--face_enhance', action='store_true', help='Enable GFPGAN face enhancement')
+    return p
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+
+    in_dir = os.path.abspath(args.input)
+    out_dir = os.path.abspath(args.output)
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Discover input images
+    exts = ('*.png', '*.jpg', '*.jpeg', '*.bmp', '*.webp')
+    files = []
+    for e in exts:
+        files.extend(sorted(glob.glob(os.path.join(in_dir, e))))
+    if not files:
+        print(f"No input images found in: {in_dir}")
+        return 2
+
+    model_name = (args.model_name or '').lower()
+    if model_name not in ('realesr-general-x4v3',):
+        print(f"Warning: unsupported model '{args.model_name}', defaulting to 'realesr-general-x4v3'.")
+        model_name = 'realesr-general-x4v3'
+
+    # Build network for general-x4v3
+    netscale = 4
+    net = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=32, upscale=netscale, act_type='prelu')
+
+    # Device / half
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    half = device == 'cuda'
+
+    restorer = RealESRGANer(
+        scale=netscale,
+        model_path=args.model_path,
+        model=net,
+        tile=0,
+        tile_pad=10,
+        pre_pad=0,
+        half=half,
+        device=device,
+    )
+
+    face_enhancer = None
+    if args.face_enhance:
+        try:
+            from gfpgan import GFPGANer
+            face_enhancer = GFPGANer(model_path=None, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=restorer)
+        except Exception as e:
+            print(f"GFPGAN face enhancement disabled (failed to initialize): {e}")
+            face_enhancer = None
+
+    # Process images
+    count = 0
+    for fp in files:
+        img = cv2.imread(fp, cv2.IMREAD_COLOR)
+        if img is None:
+            print(f"Skipping unreadable image: {fp}")
+            continue
+        try:
+            if face_enhancer is not None:
+                output, _ = face_enhancer.enhance(img, has_aligned=False, only_center_face=False, paste_back=True)
+            else:
+                output, _ = restorer.enhance(img, outscale=int(args.outscale))
+        except Exception as e:
+            print(f"Enhance failed for {fp}: {e}")
+            continue
+        out_path = os.path.join(out_dir, os.path.basename(fp))
+        ok = cv2.imwrite(out_path, output)
+        if not ok:
+            print(f"Failed to write output: {out_path}")
+            continue
+        count += 1
+
+    if count == 0:
+        print("No images were processed successfully.")
+        return 1
+    print(f"Enhanced {count} images to: {out_dir}")
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
