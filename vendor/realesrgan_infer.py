@@ -16,25 +16,17 @@ import cv2
 
 import torch
 
-GFPGAN_WEIGHT_CANDIDATES = (
-    'models/GFPGANv1.4.pth',
-    'models/GFPGANv1.3.pth',
-    'models/GFPGANv1.2.pth',
-    'model/GFPGANv1.4.pth',  # sometimes singular directory is used
-    'model/GFPGANv1.3.pth',
-    'model/GFPGANv1.2.pth',
-    os.path.expanduser('~/.cache/gfpgan/GFPGANv1.4.pth'),
-)
+# Strict path for GFPGAN weights per project policy
+REQUIRED_GFPGAN_WEIGHTS = 'models/GFPGANv1.4.pth'
 
-def _find_gfpgan_weights() -> str | None:
-    # Allow override via env var
-    env = os.getenv('GFPGAN_MODEL_PATH')
-    if env and os.path.isfile(env):
-        return env
-    for p in GFPGAN_WEIGHT_CANDIDATES:
-        if p and os.path.isfile(p):
-            return p
-    return None
+def _require_gfpgan_weights() -> str:
+    path = REQUIRED_GFPGAN_WEIGHTS
+    if os.path.isfile(path):
+        return path
+    raise SystemExit(
+        f"GFPGAN weights not found at required path: {path}. "
+        f"Place GFPGANv1.4.pth in aporto/upscale/models and retry."
+    )
 
 try:
     from realesrgan.utils import RealESRGANer
@@ -103,17 +95,13 @@ def main() -> int:
 
     face_enhancer = None
     if args.face_enhance:
+        # Enforce presence of GFPGAN weights at required path; fail fast if missing
+        w = _require_gfpgan_weights()
         try:
             from gfpgan import GFPGANer
-            w = _find_gfpgan_weights()
-            if not w:
-                print("GFPGAN weights not found (models/GFPGANv1.x.pth). Face enhancement will be skipped.")
-            else:
-                # Use background upsampler (RealESRGAN) and GFPGAN weights
-                face_enhancer = GFPGANer(model_path=w, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=restorer)
+            face_enhancer = GFPGANer(model_path=w, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=restorer)
         except Exception as e:
-            print(f"GFPGAN face enhancement disabled (failed to initialize): {e}")
-            face_enhancer = None
+            raise SystemExit(f"Failed to initialize GFPGAN with weights at {w}: {e}")
 
     # Process images
     count = 0

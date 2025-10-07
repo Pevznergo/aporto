@@ -53,6 +53,7 @@ File exchange
 
 Model download
 - start_server.sh downloads realesr-general-x4v3.pth into models/ on first run
+- GFPGAN face enhancement is mandatory. Place GFPGANv1.4.pth at models/GFPGANv1.4.pth before starting the server (the server will refuse to start if missing).
 
 Smoke test (on instance)
 - curl http://127.0.0.1:5000/health

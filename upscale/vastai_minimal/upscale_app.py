@@ -281,13 +281,17 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
             print(f"Failed to execute Real-ESRGAN command: {e}")
             print(f"Tried command: {' '.join(cmd)}")
             return False
-        if result.returncode != 0:
+
+        produced_any = os.path.isdir(output_frames_dir) and any(
+            fn.lower().endswith(('.png', '.jpg', '.jpeg')) for fn in os.listdir(output_frames_dir)
+        )
+        if result.returncode != 0 and not produced_any:
             print(f"Real-ESRGAN failed: {result.stderr or result.stdout}")
             print(f"Command was: {' '.join(cmd)}")
             return False
 
         # Verify outputs exist
-        if not os.path.isdir(output_frames_dir) or not any(fn.lower().endswith(('.png', '.jpg', '.jpeg')) for fn in os.listdir(output_frames_dir)):
+        if not produced_any:
             print("Real-ESRGAN finished without producing frames.")
             if result.stdout:
                 print("STDOUT:\n" + result.stdout)

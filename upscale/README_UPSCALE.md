@@ -63,3 +63,8 @@ To change these settings, modify the constants at the top of `upscale_app.py`.
 ## Dependencies
 
 All dependencies are listed in `requirements.txt` and will be automatically installed when running the application.
+
+## Required models
+
+- Real-ESRGAN weights will be downloaded automatically to `models/realesr-general-x4v3.pth` on first run (if missing).
+- GFPGAN face enhancement is mandatory. Place `GFPGANv1.4.pth` at `models/GFPGANv1.4.pth` before starting the server. The server will refuse to start if this file is not present.

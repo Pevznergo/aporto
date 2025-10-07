@@ -163,12 +163,22 @@ def health_check():
     """Health check endpoint."""
     return jsonify({"status": "healthy", "service": "video-upscale-api"})
 
+def _require_gfpgan_on_start():
+    base = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base, 'models', 'GFPGANv1.4.pth')
+    if not os.path.isfile(path):
+        print(f"FATAL: Required GFPGAN weights not found: {path}. Place GFPGANv1.4.pth in models/ and restart.")
+        sys.exit(1)
+
 if __name__ == '__main__':
     print("Starting Video Upscaling Server...")
     print("Endpoints:")
     print("  POST /upscale - Submit upscaling job")
     print("  GET /job/<id> - Check job status")
     print("  GET /health - Health check")
+
+    # Enforce GFPGAN weights presence at startup (project policy)
+    _require_gfpgan_on_start()
     
     # Run the server
     app.run(host='0.0.0.0', port=5000, debug=False)
