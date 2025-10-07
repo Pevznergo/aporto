@@ -206,13 +206,20 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
             except Exception:
                 pass
             try:
-                if importlib.util.find_spec('realesrgan') is not None:
+                if importlib.util.find_spec('realesrgan') is not None and importlib.util.find_spec('realesrgan.__main__') is not None:
                     return [sys.executable, '-m', 'realesrgan']
             except Exception:
                 pass
             exe = shutil.which('realesrgan')
             if exe:
                 return [exe]
+            try:
+                from pathlib import Path as _P
+                sibling = _P(sys.executable).with_name('realesrgan')
+                if sibling.exists():
+                    return [str(sibling)]
+            except Exception:
+                pass
             raise RuntimeError("Real-ESRGAN CLI not found. Ensure 'realesrgan' package is installed in the runtime environment.")
 
         cmd = _realesrgan_cmd_base() + [
