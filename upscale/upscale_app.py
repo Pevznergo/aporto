@@ -226,8 +226,16 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
                 pass
             # Final fallback: vendor script in repo (vendor/realesrgan_infer.py)
             try:
-                root = _find_patch_root()
-                vendor = os.path.join(root, 'vendor', 'realesrgan_infer.py')
+                from pathlib import Path as _P2
+                here = _P2(__file__).resolve()
+                root = None
+                for p in [here.parent, *here.parents]:
+                    if (p / 'sitecustomize.py').exists():
+                        root = p
+                        break
+                if root is None:
+                    root = here.parent
+                vendor = os.path.join(str(root), 'vendor', 'realesrgan_infer.py')
                 if os.path.isfile(vendor):
                     return [sys.executable, vendor]
             except Exception:
