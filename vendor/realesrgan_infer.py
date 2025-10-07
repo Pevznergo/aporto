@@ -69,32 +69,17 @@ def main() -> int:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     half = device == 'cuda'
 
-    # Create restorer, supporting both recent and older signatures
-    try:
-        # Newer signature supports 'device'
-        restorer = RealESRGANer(
-            scale=netscale,
-            model_path=args.model_path,
-            model=net,
-            tile=0,
-            tile_pad=10,
-            pre_pad=0,
-            half=half,
-            device=device,
-        )
-    except TypeError:
-        # Older versions don't accept 'device'; use gpu_id instead
-        gpu_id = 0 if device == 'cuda' else None
-        restorer = RealESRGANer(
-            scale=netscale,
-            model_path=args.model_path,
-            model=net,
-            tile=0,
-            tile_pad=10,
-            pre_pad=0,
-            half=half,
-            gpu_id=gpu_id,
-        )
+    # Create restorer using signature available in installed realesrgan.utils
+    # Installed version selects device internally; do not pass device/gpu_id
+    restorer = RealESRGANer(
+        scale=netscale,
+        model_path=args.model_path,
+        model=net,
+        tile=0,
+        tile_pad=10,
+        pre_pad=0,
+        half=half,
+    )
 
     face_enhancer = None
     if args.face_enhance:
