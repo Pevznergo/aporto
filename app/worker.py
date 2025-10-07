@@ -561,13 +561,15 @@ def retry_upscale_task(task_id: int):
         ut = session.get(UpscaleTask, task_id)
         if not ut:
             raise HTTPException(status_code=404, detail="Upscale task not found")
+        # Reset status and clear transient errors/stages
         ut.status = UpscaleStatus.QUEUED
         ut.stage = "queued"
         ut.progress = 0
         ut.error = None
         session.add(ut)
         session.commit()
-        upscale_queue.put(ut.id)
+        # Start from the beginning of the pipeline: enqueue upload step
+        upload_upscale_queue.put(ut.id)
         return ut
 
 
