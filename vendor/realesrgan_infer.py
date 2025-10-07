@@ -15,6 +15,13 @@ import glob
 import cv2
 
 import torch
+import warnings
+
+# Reduce noisy warnings from dependencies; do not affect functionality
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=UserWarning, module=r'torchvision')
+warnings.filterwarnings('ignore', category=UserWarning, module=r'facexlib')
+warnings.filterwarnings('ignore', category=UserWarning, module=r'gfpgan')
 
 # Strict path for GFPGAN weights per project policy
 REQUIRED_GFPGAN_WEIGHTS = 'models/GFPGANv1.4.pth'
@@ -112,11 +119,16 @@ def main() -> int:
             continue
         try:
             if face_enhancer is not None:
-                output, _ = face_enhancer.enhance(img, has_aligned=False, only_center_face=False, paste_back=True)
-                # Adjust final outscale if needed
-                if int(args.outscale) != netscale:
-                    h0, w0 = img.shape[:2]
-                    output = cv2.resize(output, (int(w0 * int(args.outscale)), int(h0 * int(args.outscale))), interpolation=cv2.INTER_LANCZOS4)
+                try:
+                    output, _ = face_enhancer.enhance(img, has_aligned=False, only_center_face=False, paste_back=True)
+                    # Adjust final outscale if needed
+                    if int(args.outscale) != netscale:
+                        h0, w0 = img.shape[:2]
+                        output = cv2.resize(output, (int(w0 * int(args.outscale)), int(h0 * int(args.outscale))), interpolation=cv2.INTER_LANCZOS4)
+                except Exception as ge:
+                    # Per-frame fallback: use RealESRGAN if GFPGAN fails on this image
+                    print(f"GFPGAN failed for {fp}: {ge}; falling back to RealESRGAN for this frame")
+                    output, _ = restorer.enhance(img, outscale=int(args.outscale))
             else:
                 output, _ = restorer.enhance(img, outscale=int(args.outscale))
         except Exception as e:
