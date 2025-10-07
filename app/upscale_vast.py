@@ -42,6 +42,17 @@ class VastManager:
             raise RuntimeError("VAST_API_KEY is not set in environment")
         # Optional override for upscale API base URL (e.g., http://127.0.0.1:18080)
         self.upscale_url_override = os.getenv("VAST_UPSCALE_URL") or None
+        # Default upscale parameters (applied if remote API supports them)
+        self.model_name = os.getenv("UPSCALE_MODEL_NAME", "realesr-general-x4v3")
+        try:
+            self.denoise_strength = float(os.getenv("UPSCALE_DENOISE_STRENGTH", "0.5"))
+        except Exception:
+            self.denoise_strength = 0.5
+        self.face_enhance = str(os.getenv("UPSCALE_FACE_ENHANCE", "1")).lower() in ("1", "true", "yes")
+        try:
+            self.outscale = int(os.getenv("UPSCALE_OUTSCALE", "4"))
+        except Exception:
+            self.outscale = 4
         # Docker image for upscale server running on instance (overridden by runtime settings)
         self.cached_instance_id_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "upscale_instance.json")
         # Default HTTP timeout for Vast API calls (seconds)
@@ -443,7 +454,15 @@ class VastManager:
             if not base:
                 raise RuntimeError("Instance public IP not found")
             url = f"{base}/upscale"
-        r = requests.post(url, json={"input_path": remote_in, "output_path": remote_out}, timeout=30)
+        payload = {
+            "input_path": remote_in,
+            "output_path": remote_out,
+            "model_name": self.model_name,
+            "denoise_strength": self.denoise_strength,
+            "face_enhance": self.face_enhance,
+            "outscale": self.outscale,
+        }
+        r = requests.post(url, json=payload, timeout=30)
         if r.status_code not in (200, 202):
             raise RuntimeError(f"Failed to submit job: {r.text}")
         data = r.json()

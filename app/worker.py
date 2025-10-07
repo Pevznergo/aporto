@@ -10,6 +10,7 @@ from .auto_pipeline import AutoPipeline
 import os
 import time
 from datetime import datetime, timezone
+import threading
 import os
 from datetime import datetime, timezone
 
@@ -43,10 +44,40 @@ download_queue: "Queue[int]" = Queue()
 process_queue: "Queue[int]" = Queue()
 
 # Upscale queues and control
-upscale_queue: "Queue[int]" = Queue()
+# Upload queue (sequential uploads by default)
+upload_upscale_queue: "Queue[int]" = Queue()
+# After upload, tasks go to process queue (GPU-bound)
+process_upscale_queue: "Queue[int]" = Queue()
+# Result download queue (sequential by default)
+result_download_queue: "Queue[int]" = Queue()
 # Default is 2, but will be read dynamically from config
 UPSCALE_CONCURRENCY_DEFAULT = 2
 _active_upscale = 0
+
+# Keep remote paths for tasks (remote_in, remote_out)
+_remote_paths: dict[int, tuple[str, str]] = {}
+_remote_lock = threading.Lock()
+
+# Separate concurrency for uploads (SSH/SCP) so uploads do not block GPU slots
+def get_upload_concurrency() -> int:
+    try:
+        val = int(os.getenv("UPSCALE_UPLOAD_CONCURRENCY", "1"))
+        return max(1, val)
+    except Exception:
+        return 1
+
+_upload_sem = threading.Semaphore(get_upload_concurrency())
+
+# Separate concurrency for downloading results (sequential by default)
+
+def get_result_download_concurrency() -> int:
+    try:
+        val = int(os.getenv("UPSCALE_RESULT_DOWNLOAD_CONCURRENCY", "1"))
+        return max(1, val)
+    except Exception:
+        return 1
+
+_result_dl_sem = threading.Semaphore(get_result_download_concurrency())
 
 stop_event = Event()
 
@@ -231,13 +262,20 @@ def start_workers():
     t1 = Thread(target=download_worker, name="download_worker", daemon=True)
     t2 = Thread(target=process_worker, name="process_worker", daemon=True)
     t3 = Thread(target=upscale_watcher, name="upscale_watcher", daemon=True)
-    t4 = Thread(target=upscale_worker, name="upscale_worker", daemon=True)
+    t4 = Thread(target=upload_upscale_worker, name="upload_upscale_worker", daemon=True)
+    # Start as many GPU workers as concurrency allows
+    from .upscale_config import get_upscale_concurrency
+    gpu_workers = []
+    for i in range(max(1, get_upscale_concurrency())):
+        gpu_workers.append(Thread(target=process_upscale_worker, name=f"process_upscale_worker_{i+1}", daemon=True))
+    t6 = Thread(target=result_download_worker, name="result_download_worker", daemon=True)
     t1.start()
     t2.start()
     t3.start()
     t4.start()
-
-
+    for tw in gpu_workers:
+        tw.start()
+    t6.start()
 def add_task_to_download(task_id: int):
     download_queue.put(task_id)
 
@@ -279,39 +317,27 @@ def upscale_watcher():
                                 session.add(ut)
                                 session.commit()
                                 session.refresh(ut)
-                                upscale_queue.put(ut.id)
+                                upload_upscale_queue.put(ut.id)
             last_seen = current
             time.sleep(2.0)
         except Exception:
             time.sleep(2.0)
 
 
-def upscale_worker():
-    global _active_upscale
-    from .upscale_config import get_upscale_concurrency
+def upload_upscale_worker():
     vast = get_vast()
     while not stop_event.is_set():
         try:
-            task_id = upscale_queue.get(timeout=0.5)
+            task_id = upload_upscale_queue.get(timeout=0.5)
         except Empty:
-            # No pending, if none active — try to stop instance
-            if _active_upscale == 0:
-                try:
-                    vast.stop_instance_if_idle()
-                except Exception:
-                    pass
+            # try to stop instance if fully idle will be handled in process worker
             continue
         with Session(engine) as session:
             ut = session.get(UpscaleTask, task_id)
             if not ut:
-                upscale_queue.task_done()
+                upload_upscale_queue.task_done()
                 continue
             try:
-                # Enforce concurrency (read dynamic value)
-                while _active_upscale >= get_upscale_concurrency() and not stop_event.is_set():
-                    time.sleep(0.5)
-                _active_upscale += 1
-
                 # Ensure instance
                 ut.stage = "ensuring_instance"
                 ut.status = UpscaleStatus.PROCESSING
@@ -325,18 +351,76 @@ def upscale_worker():
                 session.add(ut)
                 session.commit()
 
-                # Upload
+                # Sequential upload (guarded by semaphore, default 1)
                 ut.stage = "uploading"
                 ut.progress = 20
                 session.add(ut)
                 session.commit()
-                remote_in, remote_out = vast.upload_and_plan_paths(inst, ut.file_path)
+                _upload_sem.acquire()
+                try:
+                    remote_in, remote_out = vast.upload_and_plan_paths(inst, ut.file_path)
+                finally:
+                    _upload_sem.release()
+
+                # Store remote paths and enqueue for GPU processing
+                with _remote_lock:
+                    _remote_paths[task_id] = (remote_in, remote_out)
+                ut.stage = "queued_gpu"
+                ut.progress = 35
+                ut.updated_at = time_utc()
+                session.add(ut)
+                session.commit()
+                process_upscale_queue.put(task_id)
+            except Exception as e:
+                ut.status = UpscaleStatus.ERROR
+                ut.stage = "error"
+                ut.error = str(e)
+                ut.updated_at = time_utc()
+                session.add(ut)
+                session.commit()
+            finally:
+                upload_upscale_queue.task_done()
+
+
+def process_upscale_worker():
+    global _active_upscale
+    from .upscale_config import get_upscale_concurrency
+    vast = get_vast()
+    while not stop_event.is_set():
+        try:
+            task_id = process_upscale_queue.get(timeout=0.5)
+        except Empty:
+            # If all idle, consider stopping instance
+            if _active_upscale == 0 and upload_upscale_queue.empty() and process_upscale_queue.empty():
+                try:
+                    vast.stop_instance_if_idle()
+                except Exception:
+                    pass
+            continue
+        with Session(engine) as session:
+            ut = session.get(UpscaleTask, task_id)
+            if not ut:
+                process_upscale_queue.task_done()
+                continue
+            try:
+                # Wait for GPU slot
+                while _active_upscale >= get_upscale_concurrency() and not stop_event.is_set():
+                    time.sleep(0.5)
+                _active_upscale += 1
 
                 # Submit
+                with _remote_lock:
+                    remote = _remote_paths.get(task_id)
+                if not remote:
+                    raise RuntimeError("Remote paths not found for task")
+                remote_in, remote_out = remote
+
+                inst = vast.ensure_instance_running()
                 ut.stage = "processing"
                 ut.progress = 40
                 session.add(ut)
                 session.commit()
+
                 job_id = vast.submit_job(inst, remote_in, remote_out)
                 ut.vast_job_id = str(job_id)
                 session.add(ut)
@@ -346,7 +430,6 @@ def upscale_worker():
                 while True:
                     status = vast.job_status(inst, job_id)
                     if status == "processing":
-                        # Bump progress gradually 40..85
                         ut.progress = min((ut.progress or 40) + 2, 85)
                         ut.updated_at = time_utc()
                         session.add(ut)
@@ -357,19 +440,25 @@ def upscale_worker():
                     else:
                         raise RuntimeError(f"Upscale job failed: status={status}")
 
-                # Download
-                ut.stage = "downloading"
+                # Mark ready for download and immediately free GPU slot before enqueueing download
+                ut.stage = "queued_result_download"
                 ut.progress = 90
                 session.add(ut)
                 session.commit()
-                local_out = vast.download_result(inst, remote_out, CLIPS_UPSCALED_DIR)
-                ut.result_path = local_out
-                ut.stage = "done"
-                ut.status = UpscaleStatus.DONE
+                # Free GPU slot now to allow next GPU job to start while downloading happens
+                _active_upscale = max(0, _active_upscale - 1)
+                # Enqueue result download and finish this task in the GPU queue
+                result_download_queue.put(task_id)
+                process_upscale_queue.task_done()
+                continue
                 ut.progress = 100
                 ut.updated_at = time_utc()
                 session.add(ut)
                 session.commit()
+
+                # Cleanup remote path mapping
+                with _remote_lock:
+                    _remote_paths.pop(task_id, None)
 
             except Exception as e:
                 ut.status = UpscaleStatus.ERROR
@@ -379,8 +468,8 @@ def upscale_worker():
                 session.add(ut)
                 session.commit()
             finally:
-                _active_upscale = max(0, _active_upscale - 1)
-                upscale_queue.task_done()
+                pass
+                process_upscale_queue.task_done()
 
 
 def trigger_upscale_scan():
@@ -398,13 +487,73 @@ def trigger_upscale_scan():
                 session.add(ut)
                 session.commit()
                 session.refresh(ut)
-                upscale_queue.put(ut.id)
+                upload_upscale_queue.put(ut.id)
 
 
 def list_upscale_tasks():
     with Session(engine) as session:
         items = session.exec(select(UpscaleTask).order_by(UpscaleTask.id.desc())).all()
         return items
+
+
+def result_download_worker():
+    vast = get_vast()
+    while not stop_event.is_set():
+        try:
+            task_id = result_download_queue.get(timeout=0.5)
+        except Empty:
+            time.sleep(0.1)
+            continue
+        with Session(engine) as session:
+            ut = session.get(UpscaleTask, task_id)
+            if not ut:
+                result_download_queue.task_done()
+                continue
+            try:
+                # Mark downloading stage
+                ut.stage = "downloading"
+                ut.progress = 90
+                ut.updated_at = time_utc()
+                session.add(ut)
+                session.commit()
+
+                # Retrieve remote path
+                with _remote_lock:
+                    remote = _remote_paths.get(task_id)
+                if not remote:
+                    raise RuntimeError("Remote paths not found for task (download)")
+                _, remote_out = remote
+
+                # Ensure instance for SSH context
+                inst = vast.ensure_instance_running()
+
+                # Sequential (or limited) result download
+                _result_dl_sem.acquire()
+                try:
+                    local_out = vast.download_result(inst, remote_out, CLIPS_UPSCALED_DIR)
+                finally:
+                    _result_dl_sem.release()
+
+                ut.result_path = local_out
+                ut.stage = "done"
+                ut.status = UpscaleStatus.DONE
+                ut.progress = 100
+                ut.updated_at = time_utc()
+                session.add(ut)
+                session.commit()
+
+                # Cleanup mapping for this task
+                with _remote_lock:
+                    _remote_paths.pop(task_id, None)
+            except Exception as e:
+                ut.status = UpscaleStatus.ERROR
+                ut.stage = "error"
+                ut.error = str(e)
+                ut.updated_at = time_utc()
+                session.add(ut)
+                session.commit()
+            finally:
+                result_download_queue.task_done()
 
 
 def retry_upscale_task(task_id: int):
@@ -443,8 +592,12 @@ def delete_upscale_task(task_id: int):
             raise HTTPException(status_code=404, detail="Upscale task not found")
         # Best-effort: allow deletion even if processing; worker may still be running
         # but will not be able to update a deleted row.
-        # Remove from queue if present
-        _purge_from_queue(upscale_queue, task_id)
+        # Remove from queues if present
+        _purge_from_queue(upload_upscale_queue, task_id)
+        _purge_from_queue(process_upscale_queue, task_id)
+        # Clean mapping
+        with _remote_lock:
+            _remote_paths.pop(task_id, None)
         # Delete input file (safety: only under TO_UPSCALE_DIR)
         try:
             if ut.file_path and os.path.isfile(ut.file_path):
