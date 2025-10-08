@@ -230,8 +230,17 @@ def _yt_dlp_download(url: str, out_dir: str) -> str:
         '--restrict-filenames',
         '-f', 'bv*+ba/b',
         '-P', out_dir,
-        url,
     ]
+    # Optional cookies support (env YTDLP_COOKIES_FILE)
+    cookies = os.environ.get('YTDLP_COOKIES_FILE')
+    if cookies and os.path.isfile(cookies):
+        cmd += ['--cookies', cookies]
+    # Optional extractor args (e.g., youtube:player-client=android or mweb)
+    extractor_args = os.environ.get('YTDLP_EXTRACTOR_ARGS')
+    if extractor_args:
+        # Expect a single string acceptable by yt-dlp: --extractor-args "youtube:player-client=android"
+        cmd += ['--extractor-args', extractor_args]
+    cmd.append(url)
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"yt-dlp failed: {r.stderr or r.stdout}")
