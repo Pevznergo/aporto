@@ -25,7 +25,7 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 # Ensure directories for static mounts exist at import time
-for _dir in ("videos", "clips", "clips_upscaled"):
+for _dir in ("videos", "clips", "clips_upscaled", "cuted"):
     os.makedirs(os.path.join(BASE_DIR, _dir), exist_ok=True)
 
 # CORS for Next.js frontend
@@ -41,6 +41,7 @@ app.add_middleware(
 app.mount("/videos", StaticFiles(directory=os.path.join(BASE_DIR, "videos")), name="videos")
 app.mount("/clips", StaticFiles(directory=os.path.join(BASE_DIR, "clips")), name="clips")
 app.mount("/clips_upscaled", StaticFiles(directory=os.path.join(BASE_DIR, "clips_upscaled")), name="clips_upscaled")
+app.mount("/cuted", StaticFiles(directory=os.path.join(BASE_DIR, "cuted")), name="cuted")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 

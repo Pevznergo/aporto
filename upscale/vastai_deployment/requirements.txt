@@ -23,6 +23,11 @@ paramiko>=2.11.0
 # Web server
 flask>=2.0.0
 
+# Cutting/transcription
+openai>=1.30.0
+openai-whisper>=20231117
+yt-dlp>=2024.7.16
+
 # Additional utilities
 requests>=2.25.0
 wget>=3.2

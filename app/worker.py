@@ -118,34 +118,108 @@ def download_worker():
                 download_queue.task_done()
                 continue
             try:
-                task.status = TaskStatus.DOWNLOADING
-                task.stage = "downloading"
-                task.progress = 5
-                task.updated_at = time_utc()
-                session.add(task)
-                session.commit()
+                # If GPU cut is enabled and mode is auto, run remote pipeline instead of local download
+                gpu_cut = str(os.getenv("CUT_ON_GPU", "")).lower() in ("1", "true", "yes")
+                if gpu_cut and getattr(task, "mode", "simple") == "auto":
+                    from .upscale_vast import VastManager
+                    vm = VastManager()
+                    task.stage = "ensuring_instance"
+                    task.progress = 5
+                    task.updated_at = time_utc()
+                    session.add(task)
+                    session.commit()
 
-                video_id, title, file_path = download_video(task.url, RAW_DIR)
-                task.video_id = video_id
-                task.original_filename = title
-                task.downloaded_path = file_path
-                # Save to downloads registry (dedupe by URL)
-                try:
-                    from .models import DownloadedVideo
-                    exists = session.exec(select(DownloadedVideo).where(DownloadedVideo.url == task.url)).first()
-                    if not exists:
-                        session.add(DownloadedVideo(url=task.url, title=title))
-                        session.commit()
-                except Exception:
-                    pass
-                task.status = TaskStatus.QUEUED_PROCESS
-                task.stage = "queued_process"
-                task.progress = 25
-                task.updated_at = time_utc()
-                session.add(task)
-                session.commit()
+                    inst = vm.ensure_instance_running()
+                    # Submit remote cut job
+                    task.stage = "remote_submit"
+                    task.progress = 10
+                    session.add(task)
+                    session.commit()
+                    model_size = os.getenv("WHISPER_MODEL", "small")
+                    job_id = vm.submit_cut_url(inst, task.url, model_size=model_size)
+                    task.stage = "remote_processing"
+                    task.status = TaskStatus.PROCESSING
+                    task.progress = 30
+                    task.updated_at = time_utc()
+                    session.add(task)
+                    session.commit()
 
-                process_queue.put(task.id)
+                    # Poll
+                    last_pct = 30
+                    while True:
+                        info = vm.cut_status(inst, job_id)
+                        st = info.get("status")
+                        if st == "processing":
+                            last_pct = min(last_pct + 3, 85)
+                            task.progress = last_pct
+                            task.updated_at = time_utc()
+                            session.add(task)
+                            session.commit()
+                            time.sleep(5)
+                        elif st == "completed":
+                            remote_zip = info.get("output_archive")
+                            if not remote_zip:
+                                raise RuntimeError("Remote cut completed but no archive path provided")
+                            # Download archive to local cuted dir
+                            local_cuted_base = os.path.abspath(os.path.join(BASE_DIR, "cuted"))
+                            os.makedirs(local_cuted_base, exist_ok=True)
+                            task.stage = "downloading_results"
+                            task.progress = 90
+                            session.add(task)
+                            session.commit()
+                            local_zip = vm.download_result(inst, remote_zip, local_cuted_base)
+                            # Unzip into folder
+                            import zipfile
+                            base_name = os.path.splitext(os.path.basename(local_zip))[0]
+                            dest_dir = os.path.join(local_cuted_base, base_name)
+                            os.makedirs(dest_dir, exist_ok=True)
+                            with zipfile.ZipFile(local_zip, 'r') as zf:
+                                zf.extractall(os.path.join(local_cuted_base))
+                            # Update task
+                            task.clips_dir = dest_dir
+                            # Try to set transcript and clips json paths if present
+                            tr_path = os.path.join(dest_dir, f"{base_name}_transcript.json")
+                            cj_path = os.path.join(dest_dir, f"{base_name}_clips.json")
+                            task.transcript_path = tr_path if os.path.exists(tr_path) else None
+                            task.clips_json_path = cj_path if os.path.exists(cj_path) else None
+                            task.status = TaskStatus.DONE
+                            task.stage = "done"
+                            task.progress = 100
+                            task.updated_at = time_utc()
+                            session.add(task)
+                            session.commit()
+                            break
+                        else:
+                            raise RuntimeError(f"Remote cut job failed: status={st}")
+                else:
+                    task.status = TaskStatus.DOWNLOADING
+                    task.stage = "downloading"
+                    task.progress = 5
+                    task.updated_at = time_utc()
+                    session.add(task)
+                    session.commit()
+
+                    video_id, title, file_path = download_video(task.url, RAW_DIR)
+                    task.video_id = video_id
+                    task.original_filename = title
+                    task.downloaded_path = file_path
+                    # Save to downloads registry (dedupe by URL)
+                    try:
+                        from .models import DownloadedVideo
+                        exists = session.exec(select(DownloadedVideo).where(DownloadedVideo.url == task.url)).first()
+                        if not exists:
+                            session.add(DownloadedVideo(url=task.url, title=title))
+                            session.commit()
+                    except Exception:
+                        pass
+                    task.status = TaskStatus.QUEUED_PROCESS
+                    task.stage = "queued_process"
+                    task.progress = 25
+                    task.updated_at = time_utc()
+                    session.add(task)
+                    session.commit()
+
+                    process_queue.put(task.id)
             except Exception as e:
                 task.error = str(e)
                 task.status = TaskStatus.ERROR

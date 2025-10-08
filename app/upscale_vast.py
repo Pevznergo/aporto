@@ -576,6 +576,40 @@ class VastManager:
             raise RuntimeError(f"scp download failed: {result.stderr or result.stdout}")
         return os.path.abspath(local_path)
 
+    # ====== CUT (transcribe + cut) support ======
+    def _cut_remote_dirs(self, inst: Dict) -> tuple[str, str]:
+        base = self._remote_base_dir(inst)
+        cut_base = f"{base}/cut"
+        to_cut = f"{cut_base}/to_cut"
+        cuted = f"{cut_base}/cuted"
+        return to_cut, cuted
+
+    def submit_cut_url(self, inst: Dict, url: str, model_size: str = "small") -> str:
+        # HTTP endpoint on the same server
+        if self.upscale_url_override:
+            base = self.upscale_url_override.rstrip('/')
+        else:
+            base = self._public_base_for_port(inst, 5000)
+        if not base:
+            raise RuntimeError("Instance public IP not found")
+        to_dir, out_dir = self._cut_remote_dirs(inst)
+        payload = {"url": url, "model_size": model_size, "to_dir": to_dir, "out_dir": out_dir}
+        r = requests.post(f"{base}/cut_url", json=payload, timeout=30)
+        if r.status_code not in (200, 202):
+            raise RuntimeError(f"Failed to submit cut job: {r.text}")
+        data = r.json()
+        return str(data.get("job_id"))
+
+    def cut_status(self, inst: Dict, job_id: str) -> dict:
+        if self.upscale_url_override:
+            base = self.upscale_url_override.rstrip('/')
+        else:
+            base = self._public_base_for_port(inst, 5000)
+        r = requests.get(f"{base}/cut_job/{job_id}", timeout=15)
+        if r.status_code != 200:
+            return {"status": "failed"}
+        return r.json()
+
     def _find_l4_offer(self) -> Dict:
         # Deprecated: creation flow is disabled by policy
         raise RuntimeError("Instance creation via API is disabled. Set VAST_INSTANCE_ID in settings.")
