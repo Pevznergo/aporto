@@ -421,7 +421,7 @@ def upscale_watcher():
     while not stop_event.is_set():
         try:
             current = set()
-for name in os.listdir(TO_UPSCALE_DIR):
+            for name in os.listdir(TO_UPSCALE_DIR):
                 if not _is_media_file(name):
                     continue
                 path = os.path.join(TO_UPSCALE_DIR, name)
