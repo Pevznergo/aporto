@@ -74,10 +74,7 @@ def get_task(task_id: int, session: Session = Depends(get_session)):
 
 @app.post("/api/tasks", response_model=TaskOut)
 def create_task(payload: CreateTask, session: Session = Depends(get_session)):
-    # Reject if URL already downloaded and present in the saved list
-    existing = session.exec(select(DownloadedVideo).where(DownloadedVideo.url == payload.url)).first()
-    if existing:
-        raise HTTPException(status_code=409, detail="Это видео уже было скачано ранее")
+    # Allow duplicate URLs; keep separate downloads registry for history only
     task = Task(
         url=payload.url,
         mode=(payload.mode or "simple"),

@@ -315,13 +315,14 @@ def _safe_name_from_path(path: str) -> str:
     return safe or base
 
 
-def _cut_clips_ffmpeg(video_path: str, clips: list, out_dir: str) -> list:
+def _cut_clips_ffmpeg(video_path: str, clips: list, out_dir: str, clip_suffix: str = "") -> list:
     os.makedirs(out_dir, exist_ok=True)
     made = []
     for i, clip in enumerate(clips, start=1):
         title = clip.get('title') or f'clip{i}'
         safe_title = "".join(c for c in title if c.isalnum() or c in ("_", "-", ".", "!", "?", ":", ",", "'", "&", " ")).rstrip().replace(" ", "_")
-        out_file = os.path.join(out_dir, f"clip_{i}_{safe_title}.mp4")
+        suffix = f"_{clip_suffix}" if clip_suffix else ""
+        out_file = os.path.join(out_dir, f"clip_{i}_{safe_title}{suffix}.mp4")
         frs = clip.get('fragments') or []
         if not frs:
             continue
@@ -427,9 +428,14 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
         # 1) Download
         video_path = _yt_dlp_download(url, to_dir)
         safe = _safe_name_from_path(video_path)
-        # Prepare output dir per-video
+        # Prepare output dir per-video (folder named after source video title)
         dest_dir = os.path.join(out_dir, safe)
         os.makedirs(dest_dir, exist_ok=True)
+        # Suffix: first two words from title
+        def _first_two_words(name: str) -> str:
+            parts = [p for p in name.replace('_', ' ').replace('-', ' ').split() if p]
+            return "_".join(parts[:2]) if parts else ""
+        clip_suffix = _first_two_words(safe)
         # 2) Transcribe
         model = _load_whisper_model(model_size)
         tr_path = os.path.join(dest_dir, f"{safe}_transcript.json")
@@ -438,7 +444,7 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
         clips_json_path = os.path.join(dest_dir, f"{safe}_clips.json")
         clips = _ask_openai_for_clips(transcript, clips_json_path)
         # 4) Cut
-        made = _cut_clips_ffmpeg(video_path, clips, dest_dir)
+        made = _cut_clips_ffmpeg(video_path, clips, dest_dir, clip_suffix=clip_suffix)
 
         # 5) Optional resize to aspect ratio using clipsai (strict: no fallback). Results must replace original clip files.
         if resize_flag and made:

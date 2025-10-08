@@ -8,6 +8,24 @@ from .ytdlp_wrapper import download_video
 from .ffmpeg_wrapper import process_video
 from .auto_pipeline import AutoPipeline
 import shutil
+
+
+def _is_local_stable(path: str, checks: int = 3, interval: float = 1.0, timeout: float = 30.0) -> bool:
+    start = time.time()
+    last = (-1, -1)
+    while checks > 0 and (time.time() - start) <= timeout:
+        try:
+            st = os.stat(path)
+            cur = (st.st_size, int(st.st_mtime))
+        except FileNotFoundError:
+            return False
+        if cur == last:
+            checks -= 1
+        else:
+            checks = 3
+            last = cur
+        time.sleep(interval)
+    return checks == 0
 import os
 import time
 from datetime import datetime, timezone
@@ -403,13 +421,17 @@ def upscale_watcher():
     while not stop_event.is_set():
         try:
             current = set()
-            for name in os.listdir(TO_UPSCALE_DIR):
+for name in os.listdir(TO_UPSCALE_DIR):
                 if not _is_media_file(name):
                     continue
                 path = os.path.join(TO_UPSCALE_DIR, name)
                 if os.path.isfile(path):
                     current.add(path)
                     if path not in last_seen:
+                        # Ensure file is stable before creating a task
+                        if not _is_local_stable(path):
+                            # Not stable yet; skip for now, will see on next scan
+                            continue
                         # Create task if not exists
                         with Session(engine) as session:
                             existing = session.exec(select(UpscaleTask).where(UpscaleTask.file_path == path)).first()
@@ -479,12 +501,28 @@ def upload_upscale_worker():
                 session.commit()
                 process_upscale_queue.put(task_id)
             except Exception as e:
-                ut.status = UpscaleStatus.ERROR
-                ut.stage = "error"
-                ut.error = str(e)
-                ut.updated_at = time_utc()
-                session.add(ut)
-                session.commit()
+                # If local file still being written, requeue instead of failing
+                msg = str(e)
+                if "still writing" in msg or "appears to be still writing" in msg:
+                    try:
+                        ut.stage = "queued"
+                        ut.status = UpscaleStatus.QUEUED
+                        ut.progress = 5
+                        ut.error = None
+                        ut.updated_at = time_utc()
+                        session.add(ut)
+                        session.commit()
+                    except Exception:
+                        pass
+                    time.sleep(1.0)
+                    upload_upscale_queue.put(task_id)
+                else:
+                    ut.status = UpscaleStatus.ERROR
+                    ut.stage = "error"
+                    ut.error = str(e)
+                    ut.updated_at = time_utc()
+                    session.add(ut)
+                    session.commit()
             finally:
                 upload_upscale_queue.task_done()
 
@@ -583,11 +621,14 @@ def process_upscale_worker():
 def trigger_upscale_scan():
     # force scan by placing all files into queue if not yet queued
     with Session(engine) as session:
-        for name in os.listdir(TO_UPSCALE_DIR):
+for name in os.listdir(TO_UPSCALE_DIR):
             if not _is_media_file(name):
                 continue
             path = os.path.join(TO_UPSCALE_DIR, name)
             if not os.path.isfile(path):
+                continue
+            # Ensure file looks stable before enqueue
+            if not _is_local_stable(path):
                 continue
             existing = session.exec(select(UpscaleTask).where(UpscaleTask.file_path == path)).first()
             if not existing:
