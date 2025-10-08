@@ -621,22 +621,22 @@ def process_upscale_worker():
 def trigger_upscale_scan():
     # force scan by placing all files into queue if not yet queued
     with Session(engine) as session:
-for name in os.listdir(TO_UPSCALE_DIR):
-            if not _is_media_file(name):
-                continue
-            path = os.path.join(TO_UPSCALE_DIR, name)
-            if not os.path.isfile(path):
-                continue
-            # Ensure file looks stable before enqueue
-            if not _is_local_stable(path):
-                continue
-            existing = session.exec(select(UpscaleTask).where(UpscaleTask.file_path == path)).first()
-            if not existing:
-                ut = UpscaleTask(file_path=path, status=UpscaleStatus.QUEUED, stage="queued", progress=0)
-                session.add(ut)
-                session.commit()
-                session.refresh(ut)
-                upload_upscale_queue.put(ut.id)
+        for name in os.listdir(TO_UPSCALE_DIR):
+                if not _is_media_file(name):
+                    continue
+                path = os.path.join(TO_UPSCALE_DIR, name)
+                if not os.path.isfile(path):
+                    continue
+                # Ensure file looks stable before enqueue
+                if not _is_local_stable(path):
+                    continue
+                existing = session.exec(select(UpscaleTask).where(UpscaleTask.file_path == path)).first()
+                if not existing:
+                    ut = UpscaleTask(file_path=path, status=UpscaleStatus.QUEUED, stage="queued", progress=0)
+                    session.add(ut)
+                    session.commit()
+                    session.refresh(ut)
+                    upload_upscale_queue.put(ut.id)
 
 
 def list_upscale_tasks():
