@@ -16,7 +16,7 @@ except ImportError:
 from .db import init_db, get_session
 from .models import Task, TaskStatus, UpscaleTask, UpscaleStatus, DownloadedVideo
 from .schemas import CreateTask, TaskOut, UpscaleTaskOut
-from .worker import start_workers, add_task_to_download, VIDEOS_DIR, CLIPS_UPSCALED_DIR, TO_UPSCALE_DIR, trigger_upscale_scan, list_upscale_tasks, retry_upscale_task, delete_upscale_task
+from .worker import start_workers, add_task_to_download, VIDEOS_DIR, CLIPS_UPSCALED_DIR, TO_UPSCALE_DIR, trigger_upscale_scan, list_upscale_tasks, retry_upscale_task, delete_upscale_task, clear_all_upscale_tasks, delete_task as delete_cut_task, clear_all_tasks as clear_all_cut_tasks
 
 app = FastAPI(title="Video Cutter Task Manager")
 
@@ -105,6 +105,16 @@ def retry_task(task_id: int, session: Session = Depends(get_session)):
     return task
 
 
+@app.delete("/api/tasks/{task_id}")
+def api_delete_task(task_id: int):
+    return delete_cut_task(task_id)
+
+
+@app.delete("/api/tasks")
+def api_clear_tasks():
+    return clear_all_cut_tasks()
+
+
 # Downloads registry API
 @app.get("/api/downloads")
 def api_list_downloads(session: Session = Depends(get_session)):
@@ -140,6 +150,11 @@ def api_retry_upscale(task_id: int):
 @app.delete("/api/upscale/tasks/{task_id}")
 def api_delete_upscale(task_id: int):
     return delete_upscale_task(task_id)
+
+
+@app.delete("/api/upscale/tasks")
+def api_clear_upscale():
+    return clear_all_upscale_tasks()
 
 
 # Upscale settings and status

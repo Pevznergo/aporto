@@ -7,6 +7,7 @@ from .db import engine
 from .ytdlp_wrapper import download_video
 from .ffmpeg_wrapper import process_video
 from .auto_pipeline import AutoPipeline
+import shutil
 import os
 import time
 from datetime import datetime, timezone
@@ -720,3 +721,71 @@ def delete_upscale_task(task_id: int):
         session.delete(ut)
         session.commit()
         return {"ok": True}
+
+
+def clear_all_upscale_tasks():
+    """Delete all upscale tasks and try to remove their input files."""
+    with Session(engine) as session:
+        items = session.exec(select(UpscaleTask)).all()
+        for it in items:
+            try:
+                delete_upscale_task(it.id)
+            except Exception:
+                pass
+    return {"ok": True}
+
+
+def delete_task(task_id: int):
+    """Delete a Cut task and cleanup files."""
+    with Session(engine) as session:
+        t = session.get(Task, task_id)
+        if not t:
+            raise HTTPException(status_code=404, detail="Task not found")
+        # Remove from queues
+        _purge_from_queue(download_queue, task_id)
+        _purge_from_queue(process_queue, task_id)
+        # Cleanup files: downloaded, processed, clips, transcript, clips_json
+        try:
+            if t.downloaded_path and os.path.isfile(t.downloaded_path):
+                safe_prefix = VIDEOS_DIR + os.sep
+                if t.downloaded_path.startswith(safe_prefix) or t.downloaded_path == VIDEOS_DIR:
+                    os.remove(t.downloaded_path)
+        except Exception:
+            pass
+        try:
+            if t.processed_path and os.path.isfile(t.processed_path):
+                safe_prefix = VIDEOS_DIR + os.sep
+                if t.processed_path.startswith(safe_prefix) or t.processed_path == VIDEOS_DIR:
+                    os.remove(t.processed_path)
+        except Exception:
+            pass
+        try:
+            if t.clips_dir and os.path.isdir(t.clips_dir):
+                safe_prefix = CLIPS_DIR + os.sep
+                if t.clips_dir.startswith(safe_prefix) or t.clips_dir == CLIPS_DIR:
+                    shutil.rmtree(t.clips_dir, ignore_errors=True)
+        except Exception:
+            pass
+        for p in (t.transcript_path, t.clips_json_path):
+            try:
+                if p and os.path.isfile(p):
+                    safe_prefix = CLIPS_DIR + os.sep
+                    if p.startswith(safe_prefix) or os.path.dirname(p) == CLIPS_DIR:
+                        os.remove(p)
+            except Exception:
+                pass
+        # Delete DB row
+        session.delete(t)
+        session.commit()
+        return {"ok": True}
+
+
+def clear_all_tasks():
+    with Session(engine) as session:
+        items = session.exec(select(Task)).all()
+        for it in items:
+            try:
+                delete_task(it.id)
+            except Exception:
+                pass
+    return {"ok": True}

@@ -35,6 +35,18 @@ export async function createTask(payload: { url: string; mode?: 'simple' | 'auto
   return res.json()
 }
 
+export async function deleteTask(id: number): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/tasks/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete task')
+  return res.json()
+}
+
+export async function clearTasks(): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/tasks`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to clear tasks')
+  return res.json()
+}
+
 export async function retryTask(id: number): Promise<Task> {
   const res = await fetch(`${API_BASE}/api/tasks/${id}/retry`, { method: 'POST' })
   if (!res.ok) throw new Error('Failed to retry task')

@@ -2,8 +2,8 @@
 
 import React from 'react'
 import { useEffect, useState } from 'react'
-import { createTask, listTasks, retryTask, type Task } from '@/lib/api'
-import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, type UpscaleTask } from '@/lib/upscale'
+import { createTask, listTasks, retryTask, deleteTask, clearTasks, type Task } from '@/lib/api'
+import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
   const map: Record<string, { label: string; color: string }> = {
@@ -93,6 +93,18 @@ function UpscaleSection() {
           <button onClick={() => ensureUpscaleInstance().then(refresh)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', background: '#162033', color: '#e6eaf2' }}>Запустить инстанс</button>
           <button onClick={() => setShowSettings(s => !s)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2' }}>{showSettings ? 'Закрыть' : 'Настройки'}</button>
           <a href="/clips_upscaled" target="_blank" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2' }}>Открыть clips_upscaled</a>
+          <button
+            onClick={async () => {
+              if (!confirm('Очистить все задачи Upscale? Входные файлы из to_upscale также будут удалены.')) return
+              try {
+                await clearUpscale()
+                await refresh()
+              } catch (e) {
+                alert('Не удалось очистить Upscale: ' + (e as Error).message)
+              }
+            }}
+            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #7f1d1d', background: '#1f2937', color: '#fca5a5' }}
+          >Очистить все</button>
         </div>
       </div>
       {showSettings && (
@@ -261,7 +273,25 @@ export default function Page() {
 
       {tab === 'cut' && (
       <section style={{ background: '#0f1624', border: '1px solid #223046', borderRadius: 12, padding: 16, marginTop: 16 }}>
-        <h2 style={{ marginTop: 0 }}>Задачи</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ marginTop: 0 }}>Задачи</h2>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <a href="/clips" target="_blank" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2' }}>Открыть clips</a>
+            <a href="/cuted" target="_blank" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2' }}>Открыть cuted</a>
+            <button
+              onClick={async () => {
+                if (!confirm('Очистить все задачи Cut? Файлы в videos/ и clips/ для этих задач будут удалены.')) return
+                try {
+                  await clearTasks()
+                  await refresh()
+                } catch (e) {
+                  alert('Не удалось очистить Cut: ' + (e as Error).message)
+                }
+              }}
+              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #7f1d1d', background: '#1f2937', color: '#fca5a5' }}
+            >Очистить все</button>
+          </div>
+        </div>
         <table>
           <thead>
             <tr>
@@ -295,9 +325,23 @@ export default function Page() {
                 <VideosLinks t={t} />
                 <td>{t.error ? <span style={{ color: '#b00020' }}>{t.error}</span> : '-'}</td>
                 <td>
-                  {t.status === 'error' ? (
-                    <button onClick={() => onRetry(t.id)}>Повторить</button>
-                  ) : '-'}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {t.status === 'error' ? (
+                      <button onClick={() => onRetry(t.id)}>Повторить</button>
+                    ) : null}
+                    <button
+                      title="Удалить задачу"
+                      onClick={async () => {
+                        if (!confirm('Удалить задачу и связанные с ней локальные файлы?')) return
+                        try {
+                          await deleteTask(t.id)
+                          await refresh()
+                        } catch (e) {
+                          alert('Не удалось удалить задачу: ' + (e as Error).message)
+                        }
+                      }}
+                    >🗑️</button>
+                  </div>
                 </td>
               </tr>
             ))}

@@ -66,6 +66,12 @@ export async function deleteUpscale(id: number): Promise<{ ok: boolean }> {
   return res.json()
 }
 
+export async function clearUpscale(): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/upscale/tasks`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to clear upscale tasks')
+  return res.json()
+}
+
 export function useUpscaleTasks() {
   const [tasks, setTasks] = useState<UpscaleTask[]>([])
   const [loading, setLoading] = useState(false)
