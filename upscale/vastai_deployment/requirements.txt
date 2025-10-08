@@ -27,6 +27,9 @@ flask>=2.0.0
 openai>=1.30.0
 openai-whisper>=20231117
 yt-dlp>=2024.7.16
+# Optional speaker-centered resizing
+clipsai>=0.1.0
+pyannote.audio>=3.1.0
 
 # Additional utilities
 requests>=2.25.0

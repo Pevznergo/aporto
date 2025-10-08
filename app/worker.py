@@ -121,7 +121,8 @@ def download_worker():
             try:
                 # If GPU cut is enabled and mode is auto, run remote pipeline instead of local download
                 gpu_cut = str(os.getenv("CUT_ON_GPU", "")).lower() in ("1", "true", "yes")
-                if gpu_cut and getattr(task, "mode", "simple") == "auto":
+                mode = getattr(task, "mode", "simple")
+                if gpu_cut and mode in ("auto", "auto_resize"):
                     from .upscale_vast import VastManager
                     vm = VastManager()
                     task.stage = "ensuring_instance"
@@ -137,7 +138,8 @@ def download_worker():
                     session.add(task)
                     session.commit()
                     model_size = os.getenv("WHISPER_MODEL", "small")
-                    job_id = vm.submit_cut_url(inst, task.url, model_size=model_size)
+                    do_resize = (mode == "auto_resize")
+                    job_id = vm.submit_cut_url(inst, task.url, model_size=model_size, resize=do_resize, aspect_ratio=(9,16))
                     task.stage = "remote_processing"
                     task.status = TaskStatus.PROCESSING
                     task.progress = 30

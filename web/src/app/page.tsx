@@ -252,6 +252,7 @@ export default function Page() {
             <label>Режим:
               <select name="mode" value={modeUI} onChange={e => setModeUI((e.target.value as 'simple'|'auto'))}>
                 <option value="auto">auto (Whisper+GPT)</option>
+                <option value="auto_resize">auto + resize 9/16</option>
                 <option value="simple">simple (start/end)</option>
               </select>
             </label>

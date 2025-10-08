@@ -584,7 +584,7 @@ class VastManager:
         cuted = f"{cut_base}/cuted"
         return to_cut, cuted
 
-    def submit_cut_url(self, inst: Dict, url: str, model_size: str = "small") -> str:
+    def submit_cut_url(self, inst: Dict, url: str, model_size: str = "small", resize: bool = False, aspect_ratio: tuple[int, int] = (9, 16)) -> str:
         # HTTP endpoint on the same server
         if self.upscale_url_override:
             base = self.upscale_url_override.rstrip('/')
@@ -594,6 +594,9 @@ class VastManager:
             raise RuntimeError("Instance public IP not found")
         to_dir, out_dir = self._cut_remote_dirs(inst)
         payload = {"url": url, "model_size": model_size, "to_dir": to_dir, "out_dir": out_dir}
+        if resize:
+            payload["resize"] = True
+            payload["aspect_ratio"] = list(aspect_ratio)
         r = requests.post(f"{base}/cut_url", json=payload, timeout=30)
         if r.status_code not in (200, 202):
             raise RuntimeError(f"Failed to submit cut job: {r.text}")

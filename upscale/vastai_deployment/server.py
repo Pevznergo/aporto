@@ -23,6 +23,12 @@ except Exception:
     torch = None
     OpenAI = None
 
+# Optional speaker-centered resizing (clipsai)
+try:
+    from clipsai import resize as clipsai_resize
+except Exception:
+    clipsai_resize = None
+
 app = Flask(__name__)
 
 # In-memory job tracking
@@ -395,6 +401,12 @@ def cut_from_url():
         model_size = data.get('model_size') or os.environ.get('WHISPER_MODEL', 'small')
         to_dir = data.get('to_dir') or TO_CUT_DIR
         out_dir = data.get('out_dir') or CUTED_DIR
+        resize_flag = bool(data.get('resize') or False)
+        aspect = data.get('aspect_ratio') or [9, 16]
+        try:
+            aspect_tuple = (int(aspect[0]), int(aspect[1])) if isinstance(aspect, (list, tuple)) and len(aspect) == 2 else (9, 16)
+        except Exception:
+            aspect_tuple = (9, 16)
         if not url:
             return jsonify({"error": "Missing url"}), 400
         # Prepare job
@@ -402,7 +414,7 @@ def cut_from_url():
         job_id = job_counter
         jobs[job_id] = {"status": "processing", "type": "cut", "start_time": time.time()}
         # Background thread
-        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir))
+        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple))
         t.daemon = True
         t.start()
         return jsonify({"job_id": job_id, "status": "processing"}), 202
@@ -410,7 +422,7 @@ def cut_from_url():
         return jsonify({"error": str(e)}), 500
 
 
-def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str):
+def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str, resize_flag: bool, aspect_ratio: tuple[int, int]):
     try:
         # 1) Download
         video_path = _yt_dlp_download(url, to_dir)
@@ -427,15 +439,60 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
         clips = _ask_openai_for_clips(transcript, clips_json_path)
         # 4) Cut
         made = _cut_clips_ffmpeg(video_path, clips, dest_dir)
-        # 5) Zip outputs for download
+
+        # 5) Optional resize to aspect ratio using clipsai (strict: no fallback). Results must replace original clip files.
+        if resize_flag and made:
+            token = os.environ.get('PYANNOTE_AUTH_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
+            if not clipsai_resize:
+                raise RuntimeError("clipsai not installed on server, cannot perform speaker-centered resize")
+            if not token:
+                raise RuntimeError("HUGGINGFACE_TOKEN/PYANNOTE_AUTH_TOKEN is required for speaker-centered resize")
+            w, h = aspect_ratio
+            import glob, time as _time, shutil as _sh
+            for src in made:
+                # Run clipsai resize and expect a new mp4 to appear in the same dir
+                dirn = os.path.dirname(src)
+                before = set(glob.glob(os.path.join(dirn, '*.mp4')))
+                t0 = _time.time()
+                _ = clipsai_resize(video_file_path=src, pyannote_auth_token=token, aspect_ratio=(w, h))
+                # Find a new/updated file
+                after = set(glob.glob(os.path.join(dirn, '*.mp4')))
+                candidates = [p for p in after if p not in before or os.path.getmtime(p) >= t0]
+                if not candidates:
+                    raise RuntimeError("clipsai resize did not produce an output file")
+                newest = max(candidates, key=lambda p: os.path.getmtime(p))
+                # Replace original clip with resized result (atomic move)
+                tmp_dst = src + ".resized.tmp.mp4"
+                _sh.copy2(newest, tmp_dst)
+                os.replace(tmp_dst, src)
+
+        # 6) Upscale clips in place (write over original filenames inside dest_dir)
+        import shutil as _sh
+        for src in made:
+            name = os.path.basename(src)
+            tmp_out = os.path.join(dest_dir, f".{name}.up.tmp.mp4")
+            ok = False
+            try:
+                ok = upscale_video_with_realesrgan(src, tmp_out)
+            except Exception as _e:
+                ok = False
+            if not ok or not os.path.exists(tmp_out):
+                raise RuntimeError(f"Upscale failed for {name}")
+            # Replace original clip with upscaled clip
+            os.replace(tmp_out, src)
+
+        # 7) Zip outputs for download (folder named as source video, files are the final upscaled clips)
         archive_path = os.path.join(out_dir, f"{safe}.zip")
         import zipfile
         with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-            for root, _, files in os.walk(dest_dir):
-                for f in files:
-                    p = os.path.join(root, f)
-                    arcname = os.path.relpath(p, out_dir)
-                    zf.write(p, arcname)
+            # Always include transcript and clips.json
+            for aux in (tr_path, clips_json_path):
+                if os.path.exists(aux):
+                    zf.write(aux, os.path.relpath(aux, out_dir))
+            # Include final clip files (same names as auto mode)
+            for p in made:
+                if os.path.exists(p):
+                    zf.write(p, os.path.relpath(p, out_dir))
         jobs[job_id]['status'] = 'completed'
         jobs[job_id]['output_dir'] = dest_dir
         jobs[job_id]['output_archive'] = archive_path
