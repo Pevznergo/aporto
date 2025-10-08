@@ -179,7 +179,12 @@ class VastManager:
         Ensure the configured Vast instance (VAST_INSTANCE_ID) is running.
         No creation is attempted. If no ID is configured, raise a clear error.
         Coalesces concurrent ensure calls (singleflight).
+        If VAST_UPSCALE_URL is set or VAST_DISABLE_ENSURE=1, this becomes a no-op.
         """
+        # Fast path: explicit override URL or disabled ensure
+        if self.upscale_url_override or str(os.getenv("VAST_DISABLE_ENSURE", "")).lower() in ("1", "true", "yes"):
+            self._last_ensure_details = {}
+            return {}
         # Singleflight gate
         with self._ensure_lock:
             if self._ensuring:
