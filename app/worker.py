@@ -213,38 +213,39 @@ def download_worker():
                         else:
                             raise RuntimeError(f"Remote cut job failed: status={st}")
                 else:
-                    # Enforce GPU-only policy for Cut when CUT_ON_GPU=1: no local processing fallback
-                    if gpu_cut:
-                        raise RuntimeError("Local Cut processing is disabled (GPU-only mode enabled)")
+                    # Simple mode: only download locally and finish; no local processing/cutting
+                    if mode == "simple":
+                        task.status = TaskStatus.DOWNLOADING
+                        task.stage = "downloading"
+                        task.progress = 5
+                        task.updated_at = time_utc()
+                        session.add(task)
+                        session.commit()
 
-                    task.status = TaskStatus.DOWNLOADING
-                    task.stage = "downloading"
-                    task.progress = 5
-                    task.updated_at = time_utc()
-                    session.add(task)
-                    session.commit()
-
-                    video_id, title, file_path = download_video(task.url, RAW_DIR)
-                    task.video_id = video_id
-                    task.original_filename = title
-                    task.downloaded_path = file_path
-                    # Save to downloads registry (dedupe by URL)
-                    try:
-                        from .models import DownloadedVideo
-                        exists = session.exec(select(DownloadedVideo).where(DownloadedVideo.url == task.url)).first()
-                        if not exists:
-                            session.add(DownloadedVideo(url=task.url, title=title))
-                            session.commit()
-                    except Exception:
-                        pass
-                    task.status = TaskStatus.QUEUED_PROCESS
-                    task.stage = "queued_process"
-                    task.progress = 25
-                    task.updated_at = time_utc()
-                    session.add(task)
-                    session.commit()
-
-                    process_queue.put(task.id)
+                        video_id, title, file_path = download_video(task.url, RAW_DIR)
+                        task.video_id = video_id
+                        task.original_filename = title
+                        task.downloaded_path = file_path
+                        # Save to downloads registry (dedupe by URL)
+                        try:
+                            from .models import DownloadedVideo
+                            exists = session.exec(select(DownloadedVideo).where(DownloadedVideo.url == task.url)).first()
+                            if not exists:
+                                session.add(DownloadedVideo(url=task.url, title=title))
+                                session.commit()
+                        except Exception:
+                            pass
+                        # Mark done; expose downloaded file as processed_path for convenience in UI
+                        task.processed_path = file_path
+                        task.status = TaskStatus.DONE
+                        task.stage = "done"
+                        task.progress = 100
+                        task.updated_at = time_utc()
+                        session.add(task)
+                        session.commit()
+                    else:
+                        # Non-simple Cut is GPU-only; do not run locally
+                        raise RuntimeError("Cut processing is GPU-only. Start the GPU server and retry.")
             except Exception as e:
                 task.error = str(e)
                 task.status = TaskStatus.ERROR

@@ -187,10 +187,28 @@ def health_check():
 
 def _require_gfpgan_on_start():
     base = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base, 'models', 'GFPGANv1.4.pth')
-    if not os.path.isfile(path):
-        print(f"FATAL: Required GFPGAN weights not found: {path}. Place GFPGANv1.4.pth in models/ and restart.")
+    # Candidates: vastai_deployment/models and fallback to sibling upscale/models
+    candidates = []
+    env_path = os.environ.get('GFPGAN_MODEL_PATH')
+    if env_path:
+        candidates.append(env_path)
+    candidates.append(os.path.join(base, 'models', 'GFPGANv1.4.pth'))
+    candidates.append(os.path.join(os.path.dirname(base), 'models', 'GFPGANv1.4.pth'))
+    found = None
+    for p in candidates:
+        try:
+            if p and os.path.isfile(p):
+                found = p
+                break
+        except Exception:
+            pass
+    if not found:
+        checked = "\n".join(candidates)
+        print("FATAL: Required GFPGAN weights not found. Checked:\n" + checked)
+        print("Place GFPGANv1.4.pth in one of the listed locations or set GFPGAN_MODEL_PATH.")
         sys.exit(1)
+    # Expose the resolved path to downstream code (if it respects GFPGAN_MODEL_PATH)
+    os.environ.setdefault('GFPGAN_MODEL_PATH', found)
 
 # ==== Cutting/transcription helpers ====
 
