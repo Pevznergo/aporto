@@ -213,6 +213,10 @@ def download_worker():
                         else:
                             raise RuntimeError(f"Remote cut job failed: status={st}")
                 else:
+                    # Enforce GPU-only policy for Cut when CUT_ON_GPU=1: no local processing fallback
+                    if gpu_cut:
+                        raise RuntimeError("Local Cut processing is disabled (GPU-only mode enabled)")
+
                     task.status = TaskStatus.DOWNLOADING
                     task.stage = "downloading"
                     task.progress = 5
@@ -272,7 +276,14 @@ def process_worker():
                 session.add(task)
                 session.commit()
 
-                if getattr(task, "mode", "simple") == "auto":
+                # Hard block local Auto when GPU mode is desired
+                mode_here = getattr(task, "mode", "simple")
+                if mode_here in ("auto", "auto_resize"):
+                    # This path should not be reached when CUT_ON_GPU=1 because auto is handled in download_worker.
+                    # To be safe, prohibit local auto processing explicitly.
+                    raise RuntimeError("Auto Cut processing is GPU-only. Enable the GPU server and retry.")
+
+                if mode_here == "auto":
                     if auto_pipeline is None:
                         # Model size configurable via env WHISPER_MODEL
                         model_size = os.getenv("WHISPER_MODEL", "small")
@@ -330,6 +341,9 @@ def process_worker():
                     task.stage = "done"
                     task.progress = 100
                 else:
+                    # If GPU-only mode is enabled, do not allow local simple cutting either
+                    if str(os.getenv("CUT_ON_GPU", "")).lower() in ("1", "true", "yes"):
+                        raise RuntimeError("Local simple Cut is disabled (GPU-only mode enabled)")
                     task.stage = "cutting"
                     task.progress = 80
                     task.updated_at = time_utc()
@@ -622,21 +636,21 @@ def trigger_upscale_scan():
     # force scan by placing all files into queue if not yet queued
     with Session(engine) as session:
         for name in os.listdir(TO_UPSCALE_DIR):
-                if not _is_media_file(name):
-                    continue
-                path = os.path.join(TO_UPSCALE_DIR, name)
-                if not os.path.isfile(path):
-                    continue
-                # Ensure file looks stable before enqueue
-                if not _is_local_stable(path):
-                    continue
-                existing = session.exec(select(UpscaleTask).where(UpscaleTask.file_path == path)).first()
-                if not existing:
-                    ut = UpscaleTask(file_path=path, status=UpscaleStatus.QUEUED, stage="queued", progress=0)
-                    session.add(ut)
-                    session.commit()
-                    session.refresh(ut)
-                    upload_upscale_queue.put(ut.id)
+            if not _is_media_file(name):
+                continue
+            path = os.path.join(TO_UPSCALE_DIR, name)
+            if not os.path.isfile(path):
+                continue
+            # Ensure file looks stable before enqueue
+            if not _is_local_stable(path):
+                continue
+            existing = session.exec(select(UpscaleTask).where(UpscaleTask.file_path == path)).first()
+            if not existing:
+                ut = UpscaleTask(file_path=path, status=UpscaleStatus.QUEUED, stage="queued", progress=0)
+                session.add(ut)
+                session.commit()
+                session.refresh(ut)
+                upload_upscale_queue.put(ut.id)
 
 
 def list_upscale_tasks():
