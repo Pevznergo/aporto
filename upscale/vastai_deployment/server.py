@@ -419,13 +419,20 @@ def _cut_clips_ffmpeg(video_path: str, clips: list, out_dir: str, clip_suffix: s
 def cut_from_url():
     """
     Launch a cutting job directly from a YouTube URL on the GPU host.
-    Payload: {"url": str, "model_size": str?, "to_dir": str?, "out_dir": str?}
+    Payload: {
+      "url": str,                    # optional if input_path is provided
+      "input_path": str?,            # absolute path to an already uploaded file on GPU
+      "model_size": str?,
+      "to_dir": str?, "out_dir": str?,
+      "resize": bool?, "aspect_ratio": [w,h]?
+    }
     Returns: {"job_id": int, "status": "processing"}
     """
     global job_counter
     try:
         data = request.get_json()
         url = data.get('url')
+        input_path = data.get('input_path')
         model_size = data.get('model_size') or os.environ.get('WHISPER_MODEL', 'small')
         to_dir = data.get('to_dir') or TO_CUT_DIR
         out_dir = data.get('out_dir') or CUTED_DIR
@@ -435,25 +442,44 @@ def cut_from_url():
             aspect_tuple = (int(aspect[0]), int(aspect[1])) if isinstance(aspect, (list, tuple)) and len(aspect) == 2 else (9, 16)
         except Exception:
             aspect_tuple = (9, 16)
-        if not url:
-            return jsonify({"error": "Missing url"}), 400
+        # Validate inputs: either input_path exists or we have a URL
+        if input_path:
+            if not os.path.isfile(input_path):
+                return jsonify({"error": f"input_path not found: {input_path}"}), 400
+            ok, err = _ffprobe_video_ok(input_path)
+            if not ok:
+                return jsonify({"error": f"Invalid input video: {err}"}), 400
+        elif not url:
+            return jsonify({"error": "Provide either input_path or url"}), 400
         # Prepare job
         job_counter += 1
         job_id = job_counter
-        jobs[job_id] = {"status": "processing", "type": "cut", "start_time": time.time()}
+        jobs[job_id] = {
+            "status": "processing",
+            "type": "cut",
+            "start_time": time.time(),
+            "input_path": input_path,
+            "to_dir": to_dir,
+            "out_dir": out_dir
+        }
         # Background thread
-        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple))
+        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple, input_path))
         t.daemon = True
         t.start()
         return jsonify({"job_id": job_id, "status": "processing"}), 202
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
-def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str, resize_flag: bool, aspect_ratio: tuple[int, int]):
+def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str, resize_flag: bool, aspect_ratio: tuple[int, int], input_path: str | None = None):
     try:
-        # 1) Download
-        video_path = _yt_dlp_download(url, to_dir)
+        # 1) Obtain input path
+        if input_path and os.path.isfile(input_path):
+            video_path = input_path
+        else:
+            video_path = _yt_dlp_download(url, to_dir)
         safe = _safe_name_from_path(video_path)
         # Prepare output dir per-video (folder named after source video title)
         dest_dir = os.path.join(out_dir, safe)
@@ -530,6 +556,21 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
         jobs[job_id]['output_dir'] = dest_dir
         jobs[job_id]['output_archive'] = archive_path
         jobs[job_id]['end_time'] = time.time()
+        # Schedule deletion of input video after short delay (if it resides under to_dir)
+        try:
+            import threading as _th
+            def _del():
+                import time as _t, os as _os
+                _t.sleep(10)
+                try:
+                    # Delete only if under to_dir
+                    if video_path and str(video_path).startswith(str(to_dir)) and _os.path.isfile(video_path):
+                        _os.remove(video_path)
+                except Exception:
+                    pass
+            _th.Thread(target=_del, daemon=True).start()
+        except Exception:
+            pass
     except Exception as e:
         jobs[job_id]['status'] = 'failed'
         jobs[job_id]['error'] = str(e)

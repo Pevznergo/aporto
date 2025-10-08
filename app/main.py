@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 import os
+import requests
 
 # Try to load environment variables from .env file
 try:
@@ -173,6 +174,21 @@ def api_put_upscale_settings(payload: dict):
 
 @app.get("/api/upscale/status")
 def api_get_upscale_status():
+    # If we are using a direct GPU HTTP endpoint, report its health as the status
+    override = os.getenv("VAST_UPSCALE_URL") or ""
+    if override.strip():
+        try:
+            base = override.rstrip('/')
+            r = requests.get(f"{base}/health", timeout=3)
+            if r.status_code == 200:
+                data = r.json()
+                # Map GPU API health to a simplified state for the UI
+                return {"state": "running" if (data.get("status") == "healthy") else "stopped"}
+            return {"state": "unknown"}
+        except Exception:
+            # GPU API not reachable
+            return {"state": "stopped"}
+    # Fallback to VastManager status (legacy flow)
     try:
         vm = VastManager()
         state = vm.get_status()

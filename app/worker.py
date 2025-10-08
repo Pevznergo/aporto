@@ -8,6 +8,9 @@ from .ytdlp_wrapper import download_video
 from .ffmpeg_wrapper import process_video
 from .auto_pipeline import AutoPipeline
 import shutil
+import requests
+import subprocess
+import shlex
 
 
 def _is_local_stable(path: str, checks: int = 3, interval: float = 1.0, timeout: float = 30.0) -> bool:
@@ -125,6 +128,71 @@ def enqueue_pending_from_db():
         session.commit()
 
 
+def _gpu_http_base() -> str:
+    base = os.getenv('VAST_UPSCALE_URL') or ''
+    return base.rstrip('/')
+
+def _gpu_cut_submit(input_path: str, url: str, model_size: str, resize: bool, aspect_ratio=(9,16), to_dir: str | None = None, out_dir: str | None = None) -> str:
+    base = _gpu_http_base()
+    if not base:
+        raise RuntimeError('VAST_UPSCALE_URL is not set')
+    payload = {
+        'input_path': input_path,
+        'url': url,
+        'model_size': model_size,
+        'resize': bool(resize),
+        'aspect_ratio': list(aspect_ratio)
+    }
+    if to_dir: payload['to_dir'] = to_dir
+    if out_dir: payload['out_dir'] = out_dir
+    r = requests.post(f"{base}/cut_url", json=payload, timeout=30)
+    if r.status_code not in (200,202):
+        raise RuntimeError(f"GPU cut submit failed: {r.text}")
+    data = r.json()
+    return str(data.get('job_id'))
+
+def _gpu_cut_status(job_id: str) -> dict:
+    base = _gpu_http_base()
+    r = requests.get(f"{base}/cut_job/{job_id}", timeout=15)
+    if r.status_code != 200:
+        return {'status':'failed'}
+    return r.json()
+
+def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
+    host = os.getenv('GPU_SSH_HOST')
+    port = os.getenv('GPU_SSH_PORT') or '35100'
+    user = os.getenv('GPU_SSH_USER') or 'root'
+    key = os.getenv('GPU_SSH_KEY')
+    if not host:
+        raise RuntimeError('GPU_SSH_HOST is not set')
+    filename = os.path.basename(local_path)
+    remote_path = f"{remote_dir.rstrip('/')}/{filename}"
+    scp_cmd = ['scp', '-P', str(port)]
+    if key:
+        scp_cmd += ['-i', key]
+    scp_cmd += [local_path, f"{user}@{host}:{remote_path}"]
+    r = subprocess.run(scp_cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"scp upload failed: {r.stderr or r.stdout}")
+    return remote_path
+
+def _gpu_scp_download(remote_path: str, local_dir: str) -> str:
+    host = os.getenv('GPU_SSH_HOST')
+    port = os.getenv('GPU_SSH_PORT') or '35100'
+    user = os.getenv('GPU_SSH_USER') or 'root'
+    key = os.getenv('GPU_SSH_KEY')
+    os.makedirs(local_dir, exist_ok=True)
+    filename = os.path.basename(remote_path)
+    local_path = os.path.join(local_dir, filename)
+    scp_cmd = ['scp', '-P', str(port)]
+    if key:
+        scp_cmd += ['-i', key]
+    scp_cmd += [f"{user}@{host}:{remote_path}", local_path]
+    r = subprocess.run(scp_cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"scp download failed: {r.stderr or r.stdout}")
+    return local_path
+
 def download_worker():
     while not stop_event.is_set():
         try:
@@ -141,31 +209,57 @@ def download_worker():
                 gpu_cut = str(os.getenv("CUT_ON_GPU", "")).lower() in ("1", "true", "yes")
                 mode = getattr(task, "mode", "simple")
                 if gpu_cut and mode in ("auto", "auto_resize"):
-                    from .upscale_vast import VastManager
-                    vm = VastManager()
-                    task.stage = "ensuring_instance"
+                    # Download locally first (as before), then upload to GPU and submit cut job using input_path
+                    task.status = TaskStatus.DOWNLOADING
+                    task.stage = "downloading"
                     task.progress = 5
                     task.updated_at = time_utc()
                     session.add(task)
                     session.commit()
 
-                    # Ensure instance only if we are not overriding URL to a fixed GPU API
+                    video_id, title, file_path = download_video(task.url, RAW_DIR)
+                    task.video_id = video_id
+                    task.original_filename = title
+                    task.downloaded_path = file_path
+                    # Save to downloads registry (dedupe by URL)
                     try:
-                        override = getattr(vm, 'upscale_url_override', None)
+                        from .models import DownloadedVideo
+                        exists = session.exec(select(DownloadedVideo).where(DownloadedVideo.url == task.url)).first()
+                        if not exists:
+                            session.add(DownloadedVideo(url=task.url, title=title))
+                            session.commit()
                     except Exception:
-                        override = None
-                    if override:
-                        inst = {}
-                    else:
-                        inst = vm.ensure_instance_running()
-                    # Submit remote cut job
+                        pass
+
+                    # Plan remote dirs
+                    base = os.getenv('GPU_CUT_BASE_DIR') or '/workspace/cut'
+                    to_dir = f"{base.rstrip('/')}/to_cut"
+                    out_dir = f"{base.rstrip('/')}/cuted"
+
+                    # Upload to GPU
+                    task.stage = "uploading_gpu"
+                    task.progress = 15
+                    session.add(task)
+                    session.commit()
+                    remote_input = _gpu_scp_upload(file_path, to_dir)
+
+                    # Submit GPU cut job with direct input_path
                     task.stage = "remote_submit"
-                    task.progress = 10
+                    task.progress = 20
                     session.add(task)
                     session.commit()
                     model_size = os.getenv("WHISPER_MODEL", "small")
                     do_resize = (mode == "auto_resize")
-                    job_id = vm.submit_cut_url(inst, task.url, model_size=model_size, resize=do_resize, aspect_ratio=(9,16))
+                    job_id = _gpu_cut_submit(remote_input, task.url, model_size=model_size, resize=do_resize, aspect_ratio=(9,16), to_dir=to_dir, out_dir=out_dir)
+
+                    # After successful submit, delete local original file
+                    try:
+                        if task.downloaded_path and os.path.isfile(task.downloaded_path):
+                            os.remove(task.downloaded_path)
+                            task.downloaded_path = None
+                    except Exception:
+                        pass
+
                     task.stage = "remote_processing"
                     task.status = TaskStatus.PROCESSING
                     task.progress = 30
@@ -176,7 +270,7 @@ def download_worker():
                     # Poll
                     last_pct = 30
                     while True:
-                        info = vm.cut_status(inst, job_id)
+                        info = _gpu_cut_status(job_id)
                         st = info.get("status")
                         if st == "processing":
                             last_pct = min(last_pct + 3, 85)
@@ -196,7 +290,7 @@ def download_worker():
                             task.progress = 90
                             session.add(task)
                             session.commit()
-                            local_zip = vm.download_result(inst, remote_zip, local_cuted_base)
+                            local_zip = _gpu_scp_download(remote_zip, local_cuted_base)
                             # Unzip into folder
                             import zipfile
                             base_name = os.path.splitext(os.path.basename(local_zip))[0]
@@ -206,7 +300,6 @@ def download_worker():
                                 zf.extractall(os.path.join(local_cuted_base))
                             # Update task
                             task.clips_dir = dest_dir
-                            # Try to set transcript and clips json paths if present
                             tr_path = os.path.join(dest_dir, f"{base_name}_transcript.json")
                             cj_path = os.path.join(dest_dir, f"{base_name}_clips.json")
                             task.transcript_path = tr_path if os.path.exists(tr_path) else None
