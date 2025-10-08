@@ -149,7 +149,15 @@ def download_worker():
                     session.add(task)
                     session.commit()
 
-                    inst = vm.ensure_instance_running()
+                    # Ensure instance only if we are not overriding URL to a fixed GPU API
+                    try:
+                        override = getattr(vm, 'upscale_url_override', None)
+                    except Exception:
+                        override = None
+                    if override:
+                        inst = {}
+                    else:
+                        inst = vm.ensure_instance_running()
                     # Submit remote cut job
                     task.stage = "remote_submit"
                     task.progress = 10
