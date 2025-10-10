@@ -11,6 +11,7 @@ import shutil
 import requests
 import subprocess
 import shlex
+import logging
 
 
 def _is_local_stable(path: str, checks: int = 3, interval: float = 1.0, timeout: float = 30.0) -> bool:
@@ -158,6 +159,37 @@ def _gpu_cut_status(job_id: str) -> dict:
         return {'status':'failed'}
     return r.json()
 
+def _gpu_ssh_exec(cmd: str) -> None:
+    host = os.getenv('GPU_SSH_HOST')
+    port = os.getenv('GPU_SSH_PORT') or '35100'
+    user = os.getenv('GPU_SSH_USER') or 'root'
+    key = os.getenv('GPU_SSH_KEY')
+    if not host:
+        raise RuntimeError('GPU_SSH_HOST is not set')
+    ssh_cmd = ['ssh', '-p', str(port),
+               '-o', 'BatchMode=yes',
+               '-o', 'StrictHostKeyChecking=no',
+               '-o', 'UserKnownHostsFile=/dev/null',
+               '-o', 'ConnectTimeout=10',
+               '-o', 'ServerAliveInterval=10',
+               '-o', 'ServerAliveCountMax=3']
+    if key:
+        ssh_cmd += ['-i', key]
+    ssh_cmd += [f"{user}@{host}", cmd]
+    logging.info(f"[gpu-ssh] exec: {cmd}")
+    r = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        raise RuntimeError(f"ssh failed: {r.stderr or r.stdout}")
+
+
+def _gpu_ensure_dirs(remote_dir: str) -> None:
+    # Create remote_dir (and sibling cuted) if not present
+    base = remote_dir.rstrip('/')
+    parent = os.path.dirname(base)
+    cuted = os.path.join(parent, 'cuted')
+    _gpu_ssh_exec(f"mkdir -p {shlex.quote(base)} {shlex.quote(cuted)}")
+
+
 def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
     host = os.getenv('GPU_SSH_HOST')
     port = os.getenv('GPU_SSH_PORT') or '35100'
@@ -167,14 +199,21 @@ def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
         raise RuntimeError('GPU_SSH_HOST is not set')
     filename = os.path.basename(local_path)
     remote_path = f"{remote_dir.rstrip('/')}/{filename}"
-    scp_cmd = ['scp', '-P', str(port)]
+    # Ensure remote directories exist
+    _gpu_ensure_dirs(remote_dir)
+    scp_cmd = ['scp', '-P', str(port),
+               '-o', 'StrictHostKeyChecking=no',
+               '-o', 'UserKnownHostsFile=/dev/null',
+               '-o', 'ConnectTimeout=15']
     if key:
         scp_cmd += ['-i', key]
     scp_cmd += [local_path, f"{user}@{host}:{remote_path}"]
-    r = subprocess.run(scp_cmd, capture_output=True, text=True)
+    logging.info(f"[gpu-scp] upload -> {remote_path}")
+    r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=600)
     if r.returncode != 0:
         raise RuntimeError(f"scp upload failed: {r.stderr or r.stdout}")
     return remote_path
+
 
 def _gpu_scp_download(remote_path: str, local_dir: str) -> str:
     host = os.getenv('GPU_SSH_HOST')
@@ -184,11 +223,15 @@ def _gpu_scp_download(remote_path: str, local_dir: str) -> str:
     os.makedirs(local_dir, exist_ok=True)
     filename = os.path.basename(remote_path)
     local_path = os.path.join(local_dir, filename)
-    scp_cmd = ['scp', '-P', str(port)]
+    scp_cmd = ['scp', '-P', str(port),
+               '-o', 'StrictHostKeyChecking=no',
+               '-o', 'UserKnownHostsFile=/dev/null',
+               '-o', 'ConnectTimeout=30']
     if key:
         scp_cmd += ['-i', key]
     scp_cmd += [f"{user}@{host}:{remote_path}", local_path]
-    r = subprocess.run(scp_cmd, capture_output=True, text=True)
+    logging.info(f"[gpu-scp] download <- {remote_path}")
+    r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=600)
     if r.returncode != 0:
         raise RuntimeError(f"scp download failed: {r.stderr or r.stdout}")
     return local_path
