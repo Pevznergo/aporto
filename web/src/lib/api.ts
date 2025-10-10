@@ -17,6 +17,13 @@ export type Task = {
   end_time?: number | null
 }
 
+export type DownloadedItem = {
+  id: number
+  url: string
+  title: string
+  created_at: string
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
 
 export async function listTasks(): Promise<Task[]> {
@@ -50,5 +57,17 @@ export async function clearTasks(): Promise<{ ok: boolean }> {
 export async function retryTask(id: number): Promise<Task> {
   const res = await fetch(`${API_BASE}/api/tasks/${id}/retry`, { method: 'POST' })
   if (!res.ok) throw new Error('Failed to retry task')
+  return res.json()
+}
+
+export async function listDownloads(): Promise<DownloadedItem[]> {
+  const res = await fetch(`${API_BASE}/api/downloads`, { cache: 'no-store' })
+  if (!res.ok) throw new Error('Failed to fetch downloads')
+  return res.json()
+}
+
+export async function deleteDownload(id: number): Promise<{ ok: boolean }> {
+  const res = await fetch(`${API_BASE}/api/downloads/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete download')
   return res.json()
 }

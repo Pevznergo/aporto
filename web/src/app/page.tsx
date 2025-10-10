@@ -57,7 +57,7 @@ function VideosLinks({ t }: { t: Task }) {
   )
 }
 
-type Tab = 'cut' | 'upscale'
+type Tab = 'cut' | 'upscale' | 'downloads'
 
 function UpscaleSection() {
   const { tasks, refresh } = useUpscaleTasks()
@@ -190,10 +190,15 @@ export default function Page() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [modeUI, setModeUI] = useState<'simple'|'auto'>('auto')
+  const [downloads, setDownloads] = useState<import('@/lib/api').DownloadedItem[]>([])
 
   async function refresh() {
     const data = await listTasks()
     setTasks(data)
+    try {
+      const d = await (await import('@/lib/api')).listDownloads()
+      setDownloads(d)
+    } catch {}
   }
 
   useEffect(() => {
@@ -239,6 +244,7 @@ export default function Page() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
         <button onClick={() => setTab('cut')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='cut' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Cut</button>
         <button onClick={() => setTab('upscale')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='upscale' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Upscale</button>
+        <button onClick={() => setTab('downloads')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='downloads' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Downloads</button>
       </div>
 
       {tab === 'cut' && (
@@ -353,6 +359,51 @@ export default function Page() {
 
       {tab === 'upscale' && (
         <UpscaleSection />
+      )}
+
+      {tab === 'downloads' && (
+        <section style={{ background: '#0f1624', border: '1px solid #223046', borderRadius: 12, padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ marginTop: 0 }}>История скачиваний</h2>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={refresh} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', background: '#162033', color: '#e6eaf2' }}>Обновить</button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Название</th>
+                <th>URL</th>
+                <th>Создано</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {downloads.map(d => (
+                <tr key={d.id}>
+                  <td>{d.id}</td>
+                  <td>{d.title}</td>
+                  <td><a href={d.url} target="_blank">ссылка</a></td>
+                  <td>{new Date(d.created_at).toLocaleString()}</td>
+                  <td>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const api = await import('@/lib/api')
+                          await api.deleteDownload(d.id)
+                          await refresh()
+                        } catch (e) {
+                          alert('Не удалось удалить запись: ' + (e as Error).message)
+                        }
+                      }}
+                    >Удалить</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
       )}
     </div>
   )
