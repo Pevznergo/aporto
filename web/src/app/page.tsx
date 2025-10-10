@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { useEffect, useState } from 'react'
-import { createTask, listTasks, retryTask, deleteTask, clearTasks, type Task } from '@/lib/api'
+import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, type Task, type DownloadedItem } from '@/lib/api'
 import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
@@ -190,15 +190,13 @@ export default function Page() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [modeUI, setModeUI] = useState<'simple'|'auto'>('auto')
-  const [downloads, setDownloads] = useState<import('@/lib/api').DownloadedItem[]>([])
+  const [downloads, setDownloads] = useState<DownloadedItem[]>([])
 
   async function refresh() {
     const data = await listTasks()
     setTasks(data)
-    try {
-      const d = await (await import('@/lib/api')).listDownloads()
-      setDownloads(d)
-    } catch {}
+    const d = await listDownloads()
+    setDownloads(d)
   }
 
   useEffect(() => {
@@ -390,8 +388,7 @@ export default function Page() {
                     <button
                       onClick={async () => {
                         try {
-                          const api = await import('@/lib/api')
-                          await api.deleteDownload(d.id)
+                          await deleteDownload(d.id)
                           await refresh()
                         } catch (e) {
                           alert('Не удалось удалить запись: ' + (e as Error).message)
