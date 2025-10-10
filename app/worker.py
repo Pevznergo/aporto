@@ -159,14 +159,18 @@ def _gpu_cut_status(job_id: str) -> dict:
         return {'status':'failed'}
     return r.json()
 
+def _gpu_ssh_params():
+    """Canonicalize SSH params: prefer VAST_* then GPU_*; default port/user as before."""
+    host = os.getenv('VAST_SSH_HOST') or os.getenv('GPU_SSH_HOST')
+    port = os.getenv('VAST_SSH_PORT') or os.getenv('GPU_SSH_PORT') or '35100'
+    user = os.getenv('VAST_SSH_USER') or os.getenv('GPU_SSH_USER') or 'root'
+    key = os.getenv('VAST_SSH_KEY') or os.getenv('GPU_SSH_KEY') or os.getenv('UPSCALE_SSH_KEY')
+    return host, port, user, key
+
 def _gpu_ssh_exec(cmd: str) -> None:
-    host = os.getenv('GPU_SSH_HOST')
-    port = os.getenv('GPU_SSH_PORT') or '35100'
-    user = os.getenv('GPU_SSH_USER') or 'root'
-    # Fallback to VAST_SSH_KEY/UPSCALE_SSH_KEY if GPU_SSH_KEY not set
-    key = os.getenv('GPU_SSH_KEY') or os.getenv('VAST_SSH_KEY') or os.getenv('UPSCALE_SSH_KEY')
+    host, port, user, key = _gpu_ssh_params()
     if not host:
-        raise RuntimeError('GPU_SSH_HOST is not set')
+        raise RuntimeError('VAST_SSH_HOST (or GPU_SSH_HOST) is not set')
     ssh_cmd = ['ssh', '-p', str(port),
                '-o', 'BatchMode=yes',
                '-o', 'StrictHostKeyChecking=no',
@@ -179,6 +183,8 @@ def _gpu_ssh_exec(cmd: str) -> None:
     ssh_cmd += [f"{user}@{host}", cmd]
     try:
         full_cmd = shlex.join(ssh_cmd)
+        key_exists = (os.path.isfile(key) if key else False)
+        logging.info(f"[gpu-ssh] params host={host} port={port} user={user} key={key} exists={key_exists}")
         logging.info(f"[gpu-ssh] exec cmd: {full_cmd}")
     except Exception:
         logging.info(f"[gpu-ssh] exec: {cmd}")
@@ -196,13 +202,9 @@ def _gpu_ensure_dirs(remote_dir: str) -> None:
 
 
 def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
-    host = os.getenv('GPU_SSH_HOST')
-    port = os.getenv('GPU_SSH_PORT') or '35100'
-    user = os.getenv('GPU_SSH_USER') or 'root'
-    # Fallback to VAST_SSH_KEY/UPSCALE_SSH_KEY if GPU_SSH_KEY not set
-    key = os.getenv('GPU_SSH_KEY') or os.getenv('VAST_SSH_KEY') or os.getenv('UPSCALE_SSH_KEY')
+    host, port, user, key = _gpu_ssh_params()
     if not host:
-        raise RuntimeError('GPU_SSH_HOST is not set')
+        raise RuntimeError('VAST_SSH_HOST (or GPU_SSH_HOST) is not set')
     filename = os.path.basename(local_path)
     remote_path = f"{remote_dir.rstrip('/')}/{filename}"
     # Ensure remote directories exist
@@ -216,6 +218,8 @@ def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
     scp_cmd += [local_path, f"{user}@{host}:{remote_path}"]
     try:
         full_cmd = shlex.join(scp_cmd)
+        key_exists = (os.path.isfile(key) if key else False)
+        logging.info(f"[gpu-scp] params host={host} port={port} user={user} key={key} exists={key_exists}")
         logging.info(f"[gpu-scp] upload cmd: {full_cmd}")
     except Exception:
         logging.info(f"[gpu-scp] upload -> {remote_path}")
@@ -226,11 +230,7 @@ def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
 
 
 def _gpu_scp_download(remote_path: str, local_dir: str) -> str:
-    host = os.getenv('GPU_SSH_HOST')
-    port = os.getenv('GPU_SSH_PORT') or '35100'
-    user = os.getenv('GPU_SSH_USER') or 'root'
-    # Fallback to VAST_SSH_KEY/UPSCALE_SSH_KEY if GPU_SSH_KEY not set
-    key = os.getenv('GPU_SSH_KEY') or os.getenv('VAST_SSH_KEY') or os.getenv('UPSCALE_SSH_KEY')
+    host, port, user, key = _gpu_ssh_params()
     os.makedirs(local_dir, exist_ok=True)
     filename = os.path.basename(remote_path)
     local_path = os.path.join(local_dir, filename)
@@ -243,6 +243,8 @@ def _gpu_scp_download(remote_path: str, local_dir: str) -> str:
     scp_cmd += [f"{user}@{host}:{remote_path}", local_path]
     try:
         full_cmd = shlex.join(scp_cmd)
+        key_exists = (os.path.isfile(key) if key else False)
+        logging.info(f"[gpu-scp] params host={host} port={port} user={user} key={key} exists={key_exists}")
         logging.info(f"[gpu-scp] download cmd: {full_cmd}")
     except Exception:
         logging.info(f"[gpu-scp] download <- {remote_path}")
@@ -290,7 +292,7 @@ def download_worker():
                         pass
 
                     # Plan remote dirs
-                    base = os.getenv('GPU_CUT_BASE_DIR') or '/workspace/cut'
+                    base = os.getenv('VAST_CUT_BASE_DIR') or os.getenv('GPU_CUT_BASE_DIR') or '/workspace/cut'
                     to_dir = f"{base.rstrip('/')}/to_cut"
                     out_dir = f"{base.rstrip('/')}/cuted"
 
