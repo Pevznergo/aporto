@@ -24,12 +24,16 @@ export type DownloadedItem = {
   created_at: string
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || ''
 
 export async function listTasks(): Promise<Task[]> {
-  const res = await fetch(`${API_BASE}/api/tasks`, { cache: 'no-store' })
-  if (!res.ok) throw new Error('Failed to fetch tasks')
-  return res.json()
+  try {
+    const res = await fetch(`${API_BASE}/api/tasks`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  } catch (e) {
+    return []
+  }
 }
 
 export async function createTask(payload: { url: string; mode?: 'simple' | 'auto'; start?: string | number | null; end?: string | number | null }): Promise<Task> {
@@ -61,9 +65,13 @@ export async function retryTask(id: number): Promise<Task> {
 }
 
 export async function listDownloads(): Promise<DownloadedItem[]> {
-  const res = await fetch(`${API_BASE}/api/downloads`, { cache: 'no-store' })
-  if (!res.ok) throw new Error('Failed to fetch downloads')
-  return res.json()
+  try {
+    const res = await fetch(`${API_BASE}/api/downloads`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  } catch (e) {
+    return []
+  }
 }
 
 export async function deleteDownload(id: number): Promise<{ ok: boolean }> {
