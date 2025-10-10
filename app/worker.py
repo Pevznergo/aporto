@@ -163,7 +163,8 @@ def _gpu_ssh_exec(cmd: str) -> None:
     host = os.getenv('GPU_SSH_HOST')
     port = os.getenv('GPU_SSH_PORT') or '35100'
     user = os.getenv('GPU_SSH_USER') or 'root'
-    key = os.getenv('GPU_SSH_KEY')
+    # Fallback to VAST_SSH_KEY/UPSCALE_SSH_KEY if GPU_SSH_KEY not set
+    key = os.getenv('GPU_SSH_KEY') or os.getenv('VAST_SSH_KEY') or os.getenv('UPSCALE_SSH_KEY')
     if not host:
         raise RuntimeError('GPU_SSH_HOST is not set')
     ssh_cmd = ['ssh', '-p', str(port),
@@ -176,7 +177,11 @@ def _gpu_ssh_exec(cmd: str) -> None:
     if key:
         ssh_cmd += ['-i', key]
     ssh_cmd += [f"{user}@{host}", cmd]
-    logging.info(f"[gpu-ssh] exec: {cmd}")
+    try:
+        full_cmd = shlex.join(ssh_cmd)
+        logging.info(f"[gpu-ssh] exec cmd: {full_cmd}")
+    except Exception:
+        logging.info(f"[gpu-ssh] exec: {cmd}")
     r = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
         raise RuntimeError(f"ssh failed: {r.stderr or r.stdout}")
@@ -194,7 +199,8 @@ def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
     host = os.getenv('GPU_SSH_HOST')
     port = os.getenv('GPU_SSH_PORT') or '35100'
     user = os.getenv('GPU_SSH_USER') or 'root'
-    key = os.getenv('GPU_SSH_KEY')
+    # Fallback to VAST_SSH_KEY/UPSCALE_SSH_KEY if GPU_SSH_KEY not set
+    key = os.getenv('GPU_SSH_KEY') or os.getenv('VAST_SSH_KEY') or os.getenv('UPSCALE_SSH_KEY')
     if not host:
         raise RuntimeError('GPU_SSH_HOST is not set')
     filename = os.path.basename(local_path)
@@ -208,7 +214,11 @@ def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
     if key:
         scp_cmd += ['-i', key]
     scp_cmd += [local_path, f"{user}@{host}:{remote_path}"]
-    logging.info(f"[gpu-scp] upload -> {remote_path}")
+    try:
+        full_cmd = shlex.join(scp_cmd)
+        logging.info(f"[gpu-scp] upload cmd: {full_cmd}")
+    except Exception:
+        logging.info(f"[gpu-scp] upload -> {remote_path}")
     r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=600)
     if r.returncode != 0:
         raise RuntimeError(f"scp upload failed: {r.stderr or r.stdout}")
@@ -219,7 +229,8 @@ def _gpu_scp_download(remote_path: str, local_dir: str) -> str:
     host = os.getenv('GPU_SSH_HOST')
     port = os.getenv('GPU_SSH_PORT') or '35100'
     user = os.getenv('GPU_SSH_USER') or 'root'
-    key = os.getenv('GPU_SSH_KEY')
+    # Fallback to VAST_SSH_KEY/UPSCALE_SSH_KEY if GPU_SSH_KEY not set
+    key = os.getenv('GPU_SSH_KEY') or os.getenv('VAST_SSH_KEY') or os.getenv('UPSCALE_SSH_KEY')
     os.makedirs(local_dir, exist_ok=True)
     filename = os.path.basename(remote_path)
     local_path = os.path.join(local_dir, filename)
@@ -230,7 +241,11 @@ def _gpu_scp_download(remote_path: str, local_dir: str) -> str:
     if key:
         scp_cmd += ['-i', key]
     scp_cmd += [f"{user}@{host}:{remote_path}", local_path]
-    logging.info(f"[gpu-scp] download <- {remote_path}")
+    try:
+        full_cmd = shlex.join(scp_cmd)
+        logging.info(f"[gpu-scp] download cmd: {full_cmd}")
+    except Exception:
+        logging.info(f"[gpu-scp] download <- {remote_path}")
     r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=600)
     if r.returncode != 0:
         raise RuntimeError(f"scp download failed: {r.stderr or r.stdout}")

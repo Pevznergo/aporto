@@ -36,6 +36,19 @@ class TokenBucket:
             time.sleep(delay)
 
 
+def _cmd_to_str(cmd: list[str]) -> str:
+    """Return a safely quoted shell string for a command list."""
+    try:
+        # Python 3.8+
+        return shlex.join(cmd)
+    except Exception:
+        # Fallback quoting
+        try:
+            return " ".join(shlex.quote(part) for part in cmd)
+        except Exception:
+            return " ".join(str(part) for part in cmd)
+
+
 class VastManager:
     def __init__(self):
         self.api_key = os.getenv("VAST_API_KEY")
@@ -328,6 +341,8 @@ class VastManager:
         key = self._ssh_key_path()
         if key:
             opts += ["-i", key]
+            # Log which identity file will be used
+            print(f"[upscale][debug] SSH identity file: {key}")
         return opts
 
     def _wait_for_ssh(self, host: str, port: int, user: str, timeout: float = 120.0) -> bool:
@@ -337,6 +352,11 @@ class VastManager:
             cmd = [
                 "ssh", "-p", str(port), *self._ssh_common_opts(), f"{user}@{host}", "true"
             ]
+            # Print reachability command
+            try:
+                print(f"[upscale][debug] reachability: {_cmd_to_str(cmd)}")
+            except Exception:
+                pass
             try:
                 r = subprocess.run(cmd, capture_output=True, text=True)
                 if r.returncode == 0:
@@ -432,6 +452,10 @@ class VastManager:
         # Create dirs on remote, with fallbacks
         def _mkdir(dir1: str, dir2: str) -> bool:
             cmd = ["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"mkdir -p {dir1} {dir2}"]
+            try:
+                print(f"[upscale][debug] mkdir cmd: {_cmd_to_str(cmd)}")
+            except Exception:
+                pass
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode != 0:
                 print(f"[upscale] mkdir failed on remote: {r.stderr or r.stdout}")
@@ -477,6 +501,10 @@ class VastManager:
 
         # scp upload to temporary path (non-interactive, with options)
         scp_cmd = ["scp", "-P", str(ssh_port), *self._ssh_common_opts(), local_path, f"{user}@{ssh_host}:{remote_tmp}"]
+        try:
+            print(f"[upscale][debug] scp upload cmd: {_cmd_to_str(scp_cmd)}")
+        except Exception:
+            pass
         print(f"[upscale] scp upload to temp: {user}@{ssh_host}:{remote_tmp}")
         result = subprocess.run(scp_cmd, capture_output=True, text=True)
         # Mark activity
@@ -488,6 +516,10 @@ class VastManager:
             "ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}",
             f"test -f {shlex.quote(remote_tmp)} && wc -c < {shlex.quote(remote_tmp)}"
         ]
+        try:
+            print(f"[upscale][debug] remote size cmd: {_cmd_to_str(size_cmd)}")
+        except Exception:
+            pass
         sz = subprocess.run(size_cmd, capture_output=True, text=True)
         if sz.returncode != 0:
             # Clean up temp on failure
@@ -518,6 +550,10 @@ class VastManager:
             "ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}",
             f"ffprobe -v error -hide_banner -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 {shlex.quote(remote_tmp)}"
         ]
+        try:
+            print(f"[upscale][debug] ffprobe cmd: {_cmd_to_str(probe_cmd)}")
+        except Exception:
+            pass
         probe = subprocess.run(probe_cmd, capture_output=True, text=True)
         if probe.returncode != 0:
             # Print detailed probe error (stderr) and cleanup
@@ -526,6 +562,10 @@ class VastManager:
             raise RuntimeError(f"ffprobe failed on uploaded file: {err}")
         # Atomically move temp to final inbox path
         mv_cmd = ["ssh", "-p", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}", f"mv -f {shlex.quote(remote_tmp)} {shlex.quote(remote_in)}"]
+        try:
+            print(f"[upscale][debug] move cmd: {_cmd_to_str(mv_cmd)}")
+        except Exception:
+            pass
         mv = subprocess.run(mv_cmd, capture_output=True, text=True)
         if mv.returncode != 0:
             # Best-effort cleanup
@@ -574,6 +614,10 @@ class VastManager:
         filename = os.path.basename(remote_out)
         local_path = os.path.join(local_dir, filename)
         scp_cmd = ["scp", "-P", str(ssh_port), *self._ssh_common_opts(), f"{user}@{ssh_host}:{remote_out}", local_path]
+        try:
+            print(f"[upscale][debug] scp download cmd: {_cmd_to_str(scp_cmd)}")
+        except Exception:
+            pass
         result = subprocess.run(scp_cmd, capture_output=True, text=True)
         # Mark activity
         self._last_activity_ts = time.time()
