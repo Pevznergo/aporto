@@ -27,12 +27,28 @@ warnings.filterwarnings('ignore', category=UserWarning, module=r'gfpgan')
 REQUIRED_GFPGAN_WEIGHTS = 'models/GFPGANv1.4.pth'
 
 def _require_gfpgan_weights() -> str:
+    # Try environment variable first
+    env_path = os.environ.get('GFPGAN_MODEL_PATH')
+    if env_path and os.path.isfile(env_path):
+        return env_path
+    
+    # Try relative path
     path = REQUIRED_GFPGAN_WEIGHTS
     if os.path.isfile(path):
         return path
+    
+    # Try absolute path based on script location
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    abs_path = os.path.join(os.path.dirname(script_dir), 'upscale', 'models', 'GFPGANv1.4.pth')
+    if os.path.isfile(abs_path):
+        return abs_path
+        
     raise SystemExit(
-        f"GFPGAN weights not found at required path: {path}. "
-        f"Place GFPGANv1.4.pth in aporto/upscale/models and retry."
+        f"GFPGAN weights not found. Checked:\n"
+        f"  - Environment: {env_path}\n"
+        f"  - Relative: {path}\n"
+        f"  - Absolute: {abs_path}\n"
+        f"Place GFPGANv1.4.pth in one of these locations."
     )
 
 try:
@@ -88,11 +104,19 @@ def main() -> int:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     half = device == 'cuda'
 
+    # Determine model path - use environment variable if args.model_path is None
+    model_path = args.model_path
+    if model_path is None:
+        model_path = os.environ.get('REALESRGAN_MODEL_PATH')
+    if model_path and not os.path.isfile(model_path):
+        print(f"Warning: model_path {model_path} not found, Real-ESRGAN will try to download")
+        model_path = None
+
     # Create restorer using signature available in installed realesrgan.utils
     # Installed version selects device internally; do not pass device/gpu_id
     restorer = RealESRGANer(
         scale=netscale,
-        model_path=args.model_path,
+        model_path=model_path,
         model=net,
         tile=0,
         tile_pad=10,
