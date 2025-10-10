@@ -31,6 +31,50 @@ except Exception:
 
 app = Flask(__name__)
 
+# ---- Runtime environment introspection helpers ----
+
+def _cuda_status():
+    info = {
+        "torch_installed": False,
+        "torch_version": None,
+        "cuda_available": False,
+        "cuda_device_count": 0,
+        "cuda_devices": [],
+    }
+    try:
+        import torch  # type: ignore
+        info["torch_installed"] = True
+        info["torch_version"] = getattr(torch, "__version__", None)
+        info["cuda_available"] = bool(torch.cuda.is_available())
+        try:
+            cnt = torch.cuda.device_count() if info["cuda_available"] else 0
+        except Exception:
+            cnt = 0
+        info["cuda_device_count"] = cnt
+        devs = []
+        for i in range(cnt):
+            try:
+                devs.append({
+                    "index": i,
+                    "name": torch.cuda.get_device_name(i),
+                    "capability": tuple(torch.cuda.get_device_capability(i)),
+                })
+            except Exception:
+                pass
+        info["cuda_devices"] = devs
+    except Exception:
+        pass
+    return info
+
+
+def _resolve_model_paths():
+    gfpgan = os.environ.get('GFPGAN_MODEL_PATH')
+    realesr = os.environ.get('REALESRGAN_MODEL_PATH')
+    return {
+        "GFPGAN_MODEL_PATH": gfpgan,
+        "REALESRGAN_MODEL_PATH": realesr,
+    }
+
 # In-memory job tracking
 jobs = {}
 job_counter = 0
@@ -185,6 +229,23 @@ def health_check():
     """Health check endpoint."""
     return jsonify({"status": "healthy", "service": "video-upscale-api"})
 
+
+@app.route('/env', methods=['GET'])
+def env_report():
+    """Report runtime environment details (safe, no secrets)."""
+    cuda = _cuda_status()
+    paths = _resolve_model_paths()
+    resp = {
+        "service": "video-upscale-api",
+        "torch": cuda,
+        "models": paths,
+        "whisper_installed": bool(whisper is not None),
+        "openai_sdk_installed": bool(OpenAI is not None),
+        "cut_enable_upscale": str(os.environ.get('CUT_ENABLE_UPSCALE', '')).strip(),
+        "cut_force_device": os.environ.get('CUT_FORCE_DEVICE', ''),
+    }
+    return jsonify(resp)
+
 def _require_gfpgan_on_start():
     base = os.path.dirname(os.path.abspath(__file__))
     # Candidates: vastai_deployment/models and fallback to sibling upscale/models
@@ -216,8 +277,29 @@ def _load_whisper_model(model_size: str):
     if whisper is None:
         raise RuntimeError("whisper not installed on server")
     m = whisper.load_model(model_size)
-    if torch is not None and torch.cuda.is_available():
-        m = m.to('cuda')
+    # Device choice: env CUT_FORCE_DEVICE can be "cuda"|"cpu". Default: cuda if available.
+    dev = os.environ.get('CUT_FORCE_DEVICE', '').strip().lower()
+    try:
+        if dev == 'cuda':
+            m = m.to('cuda')
+            print("[whisper] forced device: cuda")
+        elif dev == 'cpu':
+            print("[whisper] forced device: cpu")
+        else:
+            if torch is not None and torch.cuda.is_available():
+                m = m.to('cuda')
+                print("[whisper] auto device: cuda")
+            else:
+                print("[whisper] auto device: cpu")
+    except Exception as e:
+        print(f"[whisper] device set error: {e}")
+    try:
+        # best-effort log actual device
+        p = next(m.parameters()) if hasattr(m, 'parameters') else None
+        if p is not None and hasattr(p, 'device'):
+            print(f"[whisper] model device: {p.device}")
+    except Exception:
+        pass
     return m
 
 
@@ -424,7 +506,8 @@ def cut_from_url():
       "input_path": str?,            # absolute path to an already uploaded file on GPU
       "model_size": str?,
       "to_dir": str?, "out_dir": str?,
-      "resize": bool?, "aspect_ratio": [w,h]?
+      "resize": bool?, "aspect_ratio": [w,h]?,
+      "upscale": bool?               # optional, default from env CUT_ENABLE_UPSCALE (default true)
     }
     Returns: {"job_id": int, "status": "processing"}
     """
@@ -443,6 +526,13 @@ def cut_from_url():
             aspect_tuple = (int(aspect[0]), int(aspect[1])) if isinstance(aspect, (list, tuple)) and len(aspect) == 2 else (9, 16)
         except Exception:
             aspect_tuple = (9, 16)
+        # Determine whether to run upscaling step
+        upscale_from_req = data.get('upscale') if isinstance(data, dict) else None
+        if upscale_from_req is None:
+            env_up = os.environ.get('CUT_ENABLE_UPSCALE', '')
+            upscale_flag = str(env_up).strip().lower() not in ('0', 'false', 'no')
+        else:
+            upscale_flag = bool(upscale_from_req)
         # Validate inputs: either input_path exists or we have a URL
         if input_path:
             if not os.path.isfile(input_path):
@@ -461,10 +551,11 @@ def cut_from_url():
             "start_time": time.time(),
             "input_path": input_path,
             "to_dir": to_dir,
-            "out_dir": out_dir
+            "out_dir": out_dir,
+            "upscale": upscale_flag
         }
         # Background thread
-        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple, input_path, provided_title))
+        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple, input_path, provided_title, upscale_flag))
         t.daemon = True
         t.start()
         return jsonify({"job_id": job_id, "status": "processing"}), 202
@@ -474,7 +565,7 @@ def cut_from_url():
         return jsonify({"error": str(e)}), 500
 
 
-def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str, resize_flag: bool, aspect_ratio: tuple[int, int], input_path: str | None = None, title: str | None = None):
+def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str, resize_flag: bool, aspect_ratio: tuple[int, int], input_path: str | None = None, title: str | None = None, upscale_flag: bool = True):
     try:
         # 1) Obtain input path
         if input_path and os.path.isfile(input_path):
@@ -531,20 +622,21 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
                 _sh.copy2(newest, tmp_dst)
                 os.replace(tmp_dst, src)
 
-        # 6) Upscale clips in place (write over original filenames inside dest_dir)
-        import shutil as _sh
-        for src in made:
-            name = os.path.basename(src)
-            tmp_out = os.path.join(dest_dir, f".{name}.up.tmp.mp4")
-            ok = False
-            try:
-                ok = upscale_video_with_realesrgan(src, tmp_out)
-            except Exception as _e:
+        # 6) Optional upscaling of clips in place (write over original filenames inside dest_dir)
+        if upscale_flag and made:
+            import shutil as _sh
+            for src in made:
+                name = os.path.basename(src)
+                tmp_out = os.path.join(dest_dir, f".{name}.up.tmp.mp4")
                 ok = False
-            if not ok or not os.path.exists(tmp_out):
-                raise RuntimeError(f"Upscale failed for {name}")
-            # Replace original clip with upscaled clip
-            os.replace(tmp_out, src)
+                try:
+                    ok = upscale_video_with_realesrgan(src, tmp_out)
+                except Exception as _e:
+                    ok = False
+                if not ok or not os.path.exists(tmp_out):
+                    raise RuntimeError(f"Upscale failed for {name}")
+                # Replace original clip with upscaled clip
+                os.replace(tmp_out, src)
 
         # 7) Zip outputs for download (folder named as source video, files are the final upscaled clips)
         archive_path = os.path.join(out_dir, f"{safe}.zip")
@@ -612,6 +704,19 @@ if __name__ == '__main__':
 
     # Enforce GFPGAN weights presence at startup (project policy)
     _require_gfpgan_on_start()
-    
+
+    # Optional: require CUDA availability at startup
+    try:
+        require_cuda = str(os.environ.get('CUT_REQUIRE_CUDA', '')).strip().lower() in ('1', 'true', 'yes')
+        if require_cuda:
+            cs = _cuda_status()
+            if not cs.get('cuda_available'):
+                print("FATAL: CUT_REQUIRE_CUDA=1 but torch.cuda.is_available() is False. Install CUDA-enabled torch and GPU drivers.")
+                sys.exit(1)
+            else:
+                print("CUDA OK:", cs)
+    except Exception:
+        pass
+
     # Run the server
     app.run(host='0.0.0.0', port=5000, debug=False)
