@@ -133,7 +133,7 @@ def _gpu_http_base() -> str:
     base = os.getenv('VAST_UPSCALE_URL') or ''
     return base.rstrip('/')
 
-def _gpu_cut_submit(input_path: str, url: str, model_size: str, resize: bool, aspect_ratio=(9,16), to_dir: str | None = None, out_dir: str | None = None) -> str:
+def _gpu_cut_submit(input_path: str, url: str, model_size: str, resize: bool, aspect_ratio=(9,16), to_dir: str | None = None, out_dir: str | None = None, title: str | None = None) -> str:
     base = _gpu_http_base()
     if not base:
         raise RuntimeError('VAST_UPSCALE_URL is not set')
@@ -146,6 +146,8 @@ def _gpu_cut_submit(input_path: str, url: str, model_size: str, resize: bool, as
     }
     if to_dir: payload['to_dir'] = to_dir
     if out_dir: payload['out_dir'] = out_dir
+    if title and isinstance(title, str) and title.strip():
+        payload['title'] = title
     r = requests.post(f"{base}/cut_url", json=payload, timeout=30)
     if r.status_code not in (200,202):
         raise RuntimeError(f"GPU cut submit failed: {r.text}")
@@ -310,7 +312,7 @@ def download_worker():
                     session.commit()
                     model_size = os.getenv("WHISPER_MODEL", "small")
                     do_resize = (mode == "auto_resize")
-                    job_id = _gpu_cut_submit(remote_input, task.url, model_size=model_size, resize=do_resize, aspect_ratio=(9,16), to_dir=to_dir, out_dir=out_dir)
+                    job_id = _gpu_cut_submit(remote_input, task.url, model_size=model_size, resize=do_resize, aspect_ratio=(9,16), to_dir=to_dir, out_dir=out_dir, title=title)
 
                     # After successful submit, delete local original file
                     try:

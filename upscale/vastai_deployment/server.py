@@ -433,6 +433,7 @@ def cut_from_url():
         data = request.get_json()
         url = data.get('url')
         input_path = data.get('input_path')
+        provided_title = data.get('title')
         model_size = data.get('model_size') or os.environ.get('WHISPER_MODEL', 'small')
         to_dir = data.get('to_dir') or TO_CUT_DIR
         out_dir = data.get('out_dir') or CUTED_DIR
@@ -463,7 +464,7 @@ def cut_from_url():
             "out_dir": out_dir
         }
         # Background thread
-        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple, input_path))
+        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple, input_path, provided_title))
         t.daemon = True
         t.start()
         return jsonify({"job_id": job_id, "status": "processing"}), 202
@@ -473,14 +474,19 @@ def cut_from_url():
         return jsonify({"error": str(e)}), 500
 
 
-def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str, resize_flag: bool, aspect_ratio: tuple[int, int], input_path: str | None = None):
+def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str, resize_flag: bool, aspect_ratio: tuple[int, int], input_path: str | None = None, title: str | None = None):
     try:
         # 1) Obtain input path
         if input_path and os.path.isfile(input_path):
             video_path = input_path
         else:
             video_path = _yt_dlp_download(url, to_dir)
-        safe = _safe_name_from_path(video_path)
+        if title and isinstance(title, str) and title.strip():
+            safe = "".join(c for c in title if c.isalnum() or c in ("_", "-", ".", "!", "?", ":", ",", "'", "&", " ")).rstrip().replace(" ", "_")
+            if not safe:
+                safe = _safe_name_from_path(video_path)
+        else:
+            safe = _safe_name_from_path(video_path)
         # Prepare output dir per-video (folder named after source video title)
         dest_dir = os.path.join(out_dir, safe)
         os.makedirs(dest_dir, exist_ok=True)
