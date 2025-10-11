@@ -164,12 +164,24 @@ from .upscale_vast import VastManager
 
 @app.get("/api/upscale/settings")
 def api_get_upscale_settings():
-    return get_upscale_settings()
+    """Get upscale settings from environment variables (.env file)"""
+    settings = get_upscale_settings()
+    # Add metadata to indicate settings source
+    settings["_source"] = "environment_variables"
+    settings["_readonly"] = True
+    settings["_note"] = "To change settings, modify .env file and restart application"
+    return settings
 
 
 @app.put("/api/upscale/settings")
 def api_put_upscale_settings(payload: dict):
-    return save_upscale_settings(payload)
+    """Settings modification endpoint - now returns error with instructions"""
+    return {
+        "error": "Settings are now read-only",
+        "message": "Upscale settings are managed via .env file. To change settings: 1) Edit .env file, 2) Restart application",
+        "current_settings": get_upscale_settings(),
+        "env_file_location": ".env"
+    }
 
 
 @app.get("/api/upscale/status")
