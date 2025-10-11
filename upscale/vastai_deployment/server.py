@@ -31,8 +31,7 @@ except Exception:
 
 app = Flask(__name__)
 
-# Import queue management system
-from queue_manager import queue_manager, JobType, QueueType, QueuedJob
+# Simple job processing without complex queuing
 
 # ---- Runtime environment introspection helpers ----
 
@@ -170,17 +169,21 @@ def upscale_video():
         job_counter += 1
         job_id = job_counter
         
-        # Submit to queue system
-        job_data = {
+        jobs[job_id] = {
+            "status": "processing",
             "input_path": input_path,
-            "output_path": output_path
+            "output_path": output_path,
+            "start_time": time.time()
         }
         
-        queue_manager.submit_job(job_id, JobType.UPSCALE, job_data)
+        # Process in background
+        thread = threading.Thread(target=process_upscale_job, args=(job_id, input_path, output_path))
+        thread.daemon = True
+        thread.start()
         
         return jsonify({
             "job_id": job_id,
-            "status": "queued"
+            "status": "processing"
         }), 202
         
     except Exception as e:
@@ -201,12 +204,27 @@ def process_upscale_job(job_id, input_path, output_path):
 
 @app.route('/job/<int:job_id>', methods=['GET'])
 def get_job_status(job_id):
-    """Get the status of a job from queue manager."""
-    status = queue_manager.get_job_status(job_id)
-    if not status:
+    """Get the status of an upscaling job."""
+    if job_id not in jobs:
         return jsonify({"error": "Job not found"}), 404
     
-    return jsonify(status)
+    job = jobs[job_id]
+    response = {
+        "job_id": job_id,
+        "status": job["status"]
+    }
+    
+    if "error" in job:
+        response["error"] = job["error"]
+    
+    if "start_time" in job:
+        response["start_time"] = job["start_time"]
+    
+    if "end_time" in job:
+        response["end_time"] = job["end_time"]
+        response["duration"] = job["end_time"] - job["start_time"]
+    
+    return jsonify(response)
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -529,22 +547,20 @@ def cut_from_url():
         # Prepare job
         job_counter += 1
         job_id = job_counter
-        
-        # Submit to queue system
-        job_data = {
-            "url": url,
+        jobs[job_id] = {
+            "status": "processing",
+            "type": "cut",
+            "start_time": time.time(),
             "input_path": input_path,
-            "model_size": model_size,
             "to_dir": to_dir,
             "out_dir": out_dir,
-            "title": provided_title,
-            "resize": resize_flag,
-            "aspect_ratio": aspect_tuple,
             "upscale": upscale_flag
         }
-        
-        queue_manager.submit_job(job_id, JobType.CUT, job_data)
-        return jsonify({"job_id": job_id, "status": "queued"}), 202
+        # Background thread
+        t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple, input_path, provided_title, upscale_flag))
+        t.daemon = True
+        t.start()
+        return jsonify({"job_id": job_id, "status": "processing"}), 202
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
@@ -663,187 +679,21 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
 
 @app.route('/cut_job/<int:job_id>', methods=['GET'])
 def get_cut_job(job_id: int):
-    # Use queue manager for cut jobs too
-    status = queue_manager.get_job_status(job_id)
-    if not status:
-        # Fallback to old jobs dict for backward compatibility
-        if job_id not in jobs:
-            return jsonify({"error": "Job not found"}), 404
-        j = jobs[job_id]
-        if j.get('type') != 'cut' and 'output_archive' not in j:
-            return jsonify({"error": "Not a cut job"}), 400
-        resp = {"job_id": job_id, "status": j.get('status')}
-        if 'output_dir' in j:
-            resp['output_dir'] = j['output_dir']
-        if 'output_archive' in j:
-            resp['output_archive'] = j['output_archive']
-        if 'error' in j:
-            resp['error'] = j['error']
-        return jsonify(resp)
-    return jsonify(status)
+    if job_id not in jobs:
+        return jsonify({"error": "Job not found"}), 404
+    j = jobs[job_id]
+    if j.get('type') != 'cut' and 'output_archive' not in j:
+        return jsonify({"error": "Not a cut job"}), 400
+    resp = {"job_id": job_id, "status": j.get('status')}
+    if 'output_dir' in j:
+        resp['output_dir'] = j['output_dir']
+    if 'output_archive' in j:
+        resp['output_archive'] = j['output_archive']
+    if 'error' in j:
+        resp['error'] = j['error']
+    return jsonify(resp)
 
-@app.route('/queue/stats', methods=['GET'])
-def get_queue_stats():
-    """Get current queue statistics."""
-    return jsonify(queue_manager.get_queue_stats())
-
-# ==== Queue Callback Functions ====
-
-def upscale_download_callback(job: QueuedJob) -> bool:
-    """Download stage for upscale jobs - files are already local, just validate."""
-    try:
-        input_path = job.data['input_path']
-        if not os.path.exists(input_path):
-            job.error = f"Input file not found: {input_path}"
-            return False
-        print(f"[upscale-download] Job {job.job_id}: File ready at {input_path}")
-        return True
-    except Exception as e:
-        job.error = f"Download stage failed: {e}"
-        return False
-
-def upscale_process_callback(job: QueuedJob) -> bool:
-    """Process stage for upscale jobs - actual Real-ESRGAN processing."""
-    try:
-        input_path = job.data['input_path']
-        output_path = job.data['output_path']
-        print(f"[upscale-process] Job {job.job_id}: Processing {input_path} -> {output_path}")
-        
-        success = upscale_video_with_realesrgan(input_path, output_path)
-        if not success:
-            job.error = "Upscale processing failed"
-            return False
-            
-        print(f"[upscale-process] Job {job.job_id}: Completed successfully")
-        return True
-    except Exception as e:
-        job.error = f"Process stage failed: {e}"
-        return False
-
-def upscale_upload_callback(job: QueuedJob) -> bool:
-    """Upload stage for upscale jobs - files are local, mark as complete."""
-    try:
-        output_path = job.data['output_path']
-        if not os.path.exists(output_path):
-            job.error = f"Output file missing: {output_path}"
-            return False
-        print(f"[upscale-upload] Job {job.job_id}: Upload completed")
-        return True
-    except Exception as e:
-        job.error = f"Upload stage failed: {e}"
-        return False
-
-def cut_download_callback(job: QueuedJob) -> bool:
-    """Download stage for cut jobs - download from YouTube."""
-    try:
-        url = job.data.get('url')
-        input_path = job.data.get('input_path')
-        to_dir = job.data.get('to_dir', TO_CUT_DIR)
-        
-        if input_path and os.path.isfile(input_path):
-            # File already exists
-            job.data['video_path'] = input_path
-            print(f"[cut-download] Job {job.job_id}: Using existing file {input_path}")
-        elif url:
-            # Download from URL
-            print(f"[cut-download] Job {job.job_id}: Downloading {url}")
-            video_path = _yt_dlp_download(url, to_dir)
-            job.data['video_path'] = video_path
-            print(f"[cut-download] Job {job.job_id}: Downloaded to {video_path}")
-        else:
-            job.error = "No input_path or url provided"
-            return False
-            
-        return True
-    except Exception as e:
-        job.error = f"Download stage failed: {e}"
-        return False
-
-def cut_process_callback(job: QueuedJob) -> bool:
-    """Process stage for cut jobs - transcribe and cut clips."""
-    try:
-        video_path = job.data['video_path']
-        model_size = job.data.get('model_size', 'small')
-        out_dir = job.data.get('out_dir', CUTED_DIR)
-        title = job.data.get('title')
-        
-        print(f"[cut-process] Job {job.job_id}: Processing {video_path}")
-        
-        # Generate safe name
-        if title and isinstance(title, str) and title.strip():
-            safe = "".join(c for c in title if c.isalnum() or c in ("_", "-", ".", "!", "?", ":", ",", "'", "&", " ")).rstrip().replace(" ", "_")
-            if not safe:
-                safe = _safe_name_from_path(video_path)
-        else:
-            safe = _safe_name_from_path(video_path)
-            
-        # Create output directory
-        dest_dir = os.path.join(out_dir, safe)
-        os.makedirs(dest_dir, exist_ok=True)
-        
-        # Transcribe
-        model = _load_whisper_model(model_size)
-        tr_path = os.path.join(dest_dir, f"{safe}_transcript.json")
-        transcript = _transcribe_to_json(model, video_path, tr_path)
-        
-        # Get clips from OpenAI
-        clips_json_path = os.path.join(dest_dir, f"{safe}_clips.json")
-        clips = _ask_openai_for_clips(transcript, clips_json_path)
-        
-        # Cut clips
-        clip_suffix = "_".join(safe.replace('_', ' ').replace('-', ' ').split()[:2])
-        made = _cut_clips_ffmpeg(video_path, clips, dest_dir, clip_suffix=clip_suffix)
-        
-        # Store results for upload stage
-        job.data['dest_dir'] = dest_dir
-        job.data['made_clips'] = made
-        job.data['safe_name'] = safe
-        
-        print(f"[cut-process] Job {job.job_id}: Created {len(made)} clips")
-        return True
-    except Exception as e:
-        job.error = f"Process stage failed: {e}"
-        return False
-
-def cut_upload_callback(job: QueuedJob) -> bool:
-    """Upload stage for cut jobs - create archive and mark complete."""
-    try:
-        dest_dir = job.data['dest_dir']
-        made_clips = job.data['made_clips']
-        safe_name = job.data['safe_name']
-        out_dir = job.data.get('out_dir', CUTED_DIR)
-        
-        print(f"[cut-upload] Job {job.job_id}: Creating archive for {safe_name}")
-        
-        # Create zip archive
-        archive_path = os.path.join(out_dir, f"{safe_name}.zip")
-        import zipfile
-        with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-            # Include all files from dest_dir
-            for root, dirs, files in os.walk(dest_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arc_path = os.path.relpath(file_path, out_dir)
-                    zf.write(file_path, arc_path)
-        
-        job.data['output_archive'] = archive_path
-        print(f"[cut-upload] Job {job.job_id}: Archive created at {archive_path}")
-        return True
-    except Exception as e:
-        job.error = f"Upload stage failed: {e}"
-        return False
-
-def setup_queue_callbacks():
-    """Register all callback functions with the queue manager."""
-    # Upscale callbacks
-    queue_manager.register_callback(JobType.UPSCALE, QueueType.DOWNLOAD, upscale_download_callback)
-    queue_manager.register_callback(JobType.UPSCALE, QueueType.PROCESS, upscale_process_callback)
-    queue_manager.register_callback(JobType.UPSCALE, QueueType.UPLOAD, upscale_upload_callback)
-    
-    # Cut callbacks
-    queue_manager.register_callback(JobType.CUT, QueueType.DOWNLOAD, cut_download_callback)
-    queue_manager.register_callback(JobType.CUT, QueueType.PROCESS, cut_process_callback)
-    queue_manager.register_callback(JobType.CUT, QueueType.UPLOAD, cut_upload_callback)
+# GPU server processes individual jobs without complex queuing
 
 
 if __name__ == '__main__':
@@ -871,13 +721,7 @@ if __name__ == '__main__':
     except Exception:
         pass
 
-    # Initialize queue system with callbacks
-    setup_queue_callbacks()
-    queue_manager.start()
-    
-    print("Queue system started with:")
-    print("  Upscale: download(1) -> process(2) -> upload(1)")
-    print("  Cut: download(1) -> process(1) -> upload(1)")
+    # GPU server ready - processes jobs as they come
     
     # Run the server
     app.run(host='0.0.0.0', port=5000, debug=False)

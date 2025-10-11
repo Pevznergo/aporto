@@ -196,6 +196,55 @@ def api_get_upscale_status():
         state = "unknown"
     return {"state": state}
 
+@app.get("/api/queue/stats")
+def api_get_queue_stats():
+    """Get current queue statistics from orchestrator workers."""
+    from .worker import (
+        download_queue, process_queue, 
+        upload_upscale_queue, process_upscale_queue, result_download_queue,
+        _active_upscale
+    )
+    
+    stats = {
+        "cut_queues": {
+            "download": {
+                "size": download_queue.qsize(),
+                "max_workers": 1,
+                "description": "YouTube download queue"
+            },
+            "process": {
+                "size": process_queue.qsize(),
+                "max_workers": 1,
+                "description": "Cut processing queue"
+            }
+        },
+        "upscale_queues": {
+            "upload": {
+                "size": upload_upscale_queue.qsize(),
+                "max_workers": 1,
+                "description": "Upload to GPU queue"
+            },
+            "process": {
+                "size": process_upscale_queue.qsize(),
+                "active_workers": _active_upscale,
+                "description": "GPU processing queue"
+            },
+            "download": {
+                "size": result_download_queue.qsize(),
+                "max_workers": 1,
+                "description": "Download results queue"
+            }
+        }
+    }
+    
+    try:
+        from .upscale_config import get_upscale_concurrency
+        stats["upscale_queues"]["process"]["max_workers"] = get_upscale_concurrency()
+    except Exception:
+        stats["upscale_queues"]["process"]["max_workers"] = 2
+    
+    return stats
+
 
 @app.post("/api/upscale/ensure")
 def api_upscale_ensure():

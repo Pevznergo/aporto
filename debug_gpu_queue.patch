@@ -1,0 +1,11 @@
+# Добавьте эти строки в process_upscale_worker() после строки 734
+# Для отладки работы GPU очереди
+
+logging.info(f"[GPU-{i}] Active GPU slots: {_active_upscale}/{get_upscale_concurrency()}, Task: {task_id}")
+
+# И в строку 776 (после освобождения слота):
+logging.info(f"[GPU-{i}] Freed GPU slot. Active: {_active_upscale}/{get_upscale_concurrency()}")
+
+# Добавьте в начало файла worker.py:
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
