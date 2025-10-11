@@ -242,6 +242,58 @@ def api_get_queue_stats():
         stats["upscale_queues"]["process"]["max_workers"] = get_upscale_concurrency()
     except Exception:
         stats["upscale_queues"]["process"]["max_workers"] = 2
+        
+    # Add healthcheck info
+    from datetime import datetime, timezone, timedelta
+    try:
+        from sqlmodel import Session, select
+        from .db import engine
+        from .models import UpscaleTask, UpscaleStatus
+        
+        def time_utc():
+            return datetime.now(timezone.utc).replace(tzinfo=None)
+            
+        with Session(engine) as session:
+            now = time_utc()
+            
+            # Count potentially stuck tasks
+            cutoff_10min = now - timedelta(minutes=10)
+            stuck_queued = len(list(session.exec(
+                select(UpscaleTask).where(
+                    UpscaleTask.status == UpscaleStatus.QUEUED,
+                    UpscaleTask.stage != "queued",
+                    UpscaleTask.updated_at < cutoff_10min
+                )
+            )))
+            
+            cutoff_30min = now - timedelta(minutes=30)
+            stuck_uploading = len(list(session.exec(
+                select(UpscaleTask).where(
+                    UpscaleTask.stage == "uploading",
+                    UpscaleTask.updated_at < cutoff_30min
+                )
+            )))
+            
+            cutoff_60min = now - timedelta(minutes=60)
+            stuck_processing = len(list(session.exec(
+                select(UpscaleTask).where(
+                    UpscaleTask.stage == "processing", 
+                    UpscaleTask.updated_at < cutoff_60min
+                )
+            )))
+            
+            stats["healthcheck"] = {
+                "stuck_tasks": {
+                    "queued_but_not_queued": stuck_queued,
+                    "uploading_too_long": stuck_uploading, 
+                    "processing_too_long": stuck_processing,
+                    "total": stuck_queued + stuck_uploading + stuck_processing
+                },
+                "enabled": True,
+                "check_interval": "5 minutes"
+            }
+    except Exception as e:
+        stats["healthcheck"] = {"enabled": False, "error": str(e)}
     
     return stats
 

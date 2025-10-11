@@ -32,10 +32,9 @@ def _is_local_stable(path: str, checks: int = 3, interval: float = 1.0, timeout:
     return checks == 0
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import threading
 import os
-from datetime import datetime, timezone
 
 
 def time_utc():
@@ -534,6 +533,89 @@ def process_worker():
                 process_queue.task_done()
 
 
+def queue_healthcheck_worker():
+    """
+    Healthcheck worker для отслеживания зависших задач.
+    Запускается каждые 5 минут и проверяет:
+    1. Задачи в состоянии 'queued' но не в стадии 'queued' дольше 10 минут
+    2. Задачи в стадии 'uploading' дольше 30 минут
+    3. Задачи в стадии 'processing' дольше 60 минут
+    """
+    healthcheck_interval = int(os.getenv("QUEUE_HEALTHCHECK_INTERVAL", "300"))  # 5 minutes default
+    
+    while not stop_event.is_set():
+        try:
+            with Session(engine) as session:
+                now = time_utc()
+                
+                # Найти застрявшие задачи
+                stuck_tasks = []
+                
+                # 1. Задачи в состоянии queued но не в стадии queued > 10 минут
+                cutoff_10min = now - timedelta(minutes=10)
+                queued_stuck = session.exec(
+                    select(UpscaleTask).where(
+                        UpscaleTask.status == UpscaleStatus.QUEUED,
+                        UpscaleTask.stage != "queued",
+                        UpscaleTask.updated_at < cutoff_10min
+                    )
+                ).all()
+                stuck_tasks.extend(queued_stuck)
+                
+                # 2. Задачи в стадии uploading > 30 минут
+                cutoff_30min = now - timedelta(minutes=30)
+                uploading_stuck = session.exec(
+                    select(UpscaleTask).where(
+                        UpscaleTask.stage == "uploading",
+                        UpscaleTask.updated_at < cutoff_30min
+                    )
+                ).all()
+                stuck_tasks.extend(uploading_stuck)
+                
+                # 3. Задачи в стадии processing > 60 минут
+                cutoff_60min = now - timedelta(minutes=60)
+                processing_stuck = session.exec(
+                    select(UpscaleTask).where(
+                        UpscaleTask.stage == "processing",
+                        UpscaleTask.updated_at < cutoff_60min
+                    )
+                ).all()
+                stuck_tasks.extend(processing_stuck)
+                
+                # Исправить застрявшие задачи
+                for task in stuck_tasks:
+                    logging.warning(f"[healthcheck] Found stuck task {task.id}: {task.status}/{task.stage}, last update: {task.updated_at}")
+                    
+                    # Сбросить в очередь заново
+                    task.status = UpscaleStatus.QUEUED
+                    task.stage = "queued"
+                    task.progress = 0
+                    task.error = f"Auto-reset by healthcheck (was stuck in {task.stage})"
+                    task.updated_at = now
+                    session.add(task)
+                    
+                    # Очистить remote paths mapping если есть
+                    with _remote_lock:
+                        _remote_paths.pop(task.id, None)
+                    
+                    # Добавить в очередь загрузки заново
+                    try:
+                        upload_upscale_queue.put(task.id)
+                        logging.info(f"[healthcheck] Re-queued stuck task {task.id}")
+                    except Exception as e:
+                        logging.error(f"[healthcheck] Failed to re-queue task {task.id}: {e}")
+                
+                if stuck_tasks:
+                    session.commit()
+                    logging.info(f"[healthcheck] Fixed {len(stuck_tasks)} stuck tasks")
+                    
+        except Exception as e:
+            logging.error(f"[healthcheck] Error: {e}")
+        
+        # Ждать до следующей проверки
+        time.sleep(healthcheck_interval)
+
+
 def start_workers():
     os.makedirs(RAW_DIR, exist_ok=True)
     os.makedirs(PROCESSED_DIR, exist_ok=True)
@@ -551,6 +633,7 @@ def start_workers():
     for i in range(max(1, get_upscale_concurrency())):
         gpu_workers.append(Thread(target=process_upscale_worker, name=f"process_upscale_worker_{i+1}", daemon=True))
     t6 = Thread(target=result_download_worker, name="result_download_worker", daemon=True)
+    t7 = Thread(target=queue_healthcheck_worker, name="queue_healthcheck_worker", daemon=True)
     t1.start()
     t2.start()
     t3.start()
@@ -558,6 +641,8 @@ def start_workers():
     for tw in gpu_workers:
         tw.start()
     t6.start()
+    t7.start()
+    logging.info("Started queue healthcheck worker - monitors stuck tasks every 5 minutes")
 def add_task_to_download(task_id: int):
     download_queue.put(task_id)
 
