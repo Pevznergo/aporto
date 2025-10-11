@@ -548,18 +548,37 @@ def queue_healthcheck_worker():
             with Session(engine) as session:
                 now = time_utc()
                 
+                # Count currently processing GPU tasks to decide on queued_gpu exception
+                processing_active = session.exec(
+                    select(UpscaleTask).where(
+                        UpscaleTask.status == UpscaleStatus.PROCESSING
+                    )
+                ).all()
+                processing_count = len(processing_active)
+                
                 # Найти застрявшие задачи
                 stuck_tasks = []
                 
                 # 1. Задачи в состоянии queued но не в стадии queued > 10 минут
                 cutoff_10min = now - timedelta(minutes=10)
-                queued_stuck = session.exec(
-                    select(UpscaleTask).where(
-                        UpscaleTask.status == UpscaleStatus.QUEUED,
-                        UpscaleTask.stage != "queued",
-                        UpscaleTask.updated_at < cutoff_10min
-                    )
-                ).all()
+                if processing_count >= 2:
+                    # Исключение: при занятых 2 GPU слотах не считаем queued_gpu как зависшую
+                    queued_stuck = session.exec(
+                        select(UpscaleTask).where(
+                            UpscaleTask.status == UpscaleStatus.QUEUED,
+                            UpscaleTask.stage != "queued",
+                            UpscaleTask.stage != "queued_gpu",
+                            UpscaleTask.updated_at < cutoff_10min
+                        )
+                    ).all()
+                else:
+                    queued_stuck = session.exec(
+                        select(UpscaleTask).where(
+                            UpscaleTask.status == UpscaleStatus.QUEUED,
+                            UpscaleTask.stage != "queued",
+                            UpscaleTask.updated_at < cutoff_10min
+                        )
+                    ).all()
                 stuck_tasks.extend(queued_stuck)
                 
                 # 2. Задачи в стадии uploading > 30 минут
