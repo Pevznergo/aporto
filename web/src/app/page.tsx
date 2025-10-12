@@ -3,7 +3,7 @@
 import React from 'react'
 import { useEffect, useState } from 'react'
 import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, type Task, type DownloadedItem } from '@/lib/api'
-import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, type UpscaleTask } from '@/lib/upscale'
+import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, listUpscaleTasks, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
   const map: Record<string, { label: string; color: string }> = {
@@ -191,12 +191,28 @@ export default function Page() {
   const [loading, setLoading] = useState(false)
   const [modeUI, setModeUI] = useState<'simple'|'auto'>('auto')
   const [downloads, setDownloads] = useState<DownloadedItem[]>([])
+  const [cutQueued, setCutQueued] = useState(0)
+  const [cutProcessing, setCutProcessing] = useState(0)
+  const [upQueued, setUpQueued] = useState(0)
+  const [upProcessing, setUpProcessing] = useState(0)
 
   async function refresh() {
     const data = await listTasks()
     setTasks(data)
     const d = await listDownloads()
     setDownloads(d)
+    try {
+      const ups = await listUpscaleTasks()
+      setUpQueued(ups.filter(u => (u.status || '').toLowerCase() === 'queued').length)
+      setUpProcessing(ups.filter(u => (u.status || '').toLowerCase() === 'processing').length)
+    } catch {}
+    const cq = data.filter(t => {
+      const s = (t.status || '').toLowerCase()
+      return s === 'queued_download' || s === 'queued_process'
+    }).length
+    const cp = data.filter(t => (t.status || '').toLowerCase() === 'processing').length
+    setCutQueued(cq)
+    setCutProcessing(cp)
   }
 
   useEffect(() => {
@@ -239,6 +255,30 @@ export default function Page() {
 
   return (
     <div>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #223046', background: '#0f1624', color: '#e6eaf2', display: 'flex', gap: 10, alignItems: 'center' }}>
+          <strong style={{ opacity: 0.9 }}>Cut</strong>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '2px 8px', borderRadius: 999, background: '#0f1624', border: '1px solid #223046', color: '#475569' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: '#475569' }} />
+            <span>Queued: {cutQueued}</span>
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '2px 8px', borderRadius: 999, background: '#0f1624', border: '1px solid #223046', color: '#f59e0b' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: '#f59e0b' }} />
+            <span>Processing: {cutProcessing}</span>
+          </span>
+        </div>
+        <div style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #223046', background: '#0f1624', color: '#e6eaf2', display: 'flex', gap: 10, alignItems: 'center' }}>
+          <strong style={{ opacity: 0.9 }}>Upscale</strong>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '2px 8px', borderRadius: 999, background: '#0f1624', border: '1px solid #223046', color: '#475569' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: '#475569' }} />
+            <span>Queued: {upQueued}</span>
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '2px 8px', borderRadius: 999, background: '#0f1624', border: '1px solid #223046', color: '#f59e0b' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 999, background: '#f59e0b' }} />
+            <span>Processing: {upProcessing}</span>
+          </span>
+        </div>
+      </div>
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
         <button onClick={() => setTab('cut')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='cut' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Cut</button>
         <button onClick={() => setTab('upscale')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='upscale' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Upscale</button>
