@@ -200,14 +200,16 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         
         # Build Real-ESRGAN command with fallbacks depending on installed version
         def _realesrgan_cmd_base() -> list[str]:
+            # Use explicit venv python if provided, otherwise sys.executable
+            python_exe = os.environ.get('VENV_PYTHON') or sys.executable
             try:
                 if importlib.util.find_spec('realesrgan.inference_realesrgan') is not None:
-                    return [sys.executable, '-m', 'realesrgan.inference_realesrgan']
+                    return [python_exe, '-m', 'realesrgan.inference_realesrgan']
             except Exception:
                 pass
             try:
                 if importlib.util.find_spec('realesrgan') is not None and importlib.util.find_spec('realesrgan.__main__') is not None:
-                    return [sys.executable, '-m', 'realesrgan']
+                    return [python_exe, '-m', 'realesrgan']
             except Exception:
                 pass
             exe = shutil.which('realesrgan')
@@ -222,6 +224,7 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
                 pass
             # Final fallback: vendor script in repo
             try:
+                python_exe = os.environ.get('VENV_PYTHON') or sys.executable
                 from pathlib import Path as _P2
                 here = _P2(__file__).resolve()
                 root = None
@@ -233,7 +236,7 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
                     root = here.parent
                 vendor = os.path.join(str(root), 'vendor', 'realesrgan_infer.py')
                 if os.path.isfile(vendor):
-                    return [sys.executable, vendor]
+                    return [python_exe, vendor]
             except Exception:
                 pass
             raise RuntimeError("Real-ESRGAN CLI not found. Ensure 'realesrgan' package or vendor script is available.")

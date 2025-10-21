@@ -65,6 +65,9 @@ ls -lh /workspace/aporto/upscale/models/*.pth
 # 7. Create environment file
 echo "⚙️ Creating environment configuration..."
 cat > /workspace/aporto/.env << 'EOF'
+# Python interpreter (for subprocess calls)
+VENV_PYTHON=/workspace/aporto/.venv/bin/python
+
 # Model paths
 GFPGAN_MODEL_PATH=/workspace/aporto/upscale/models/GFPGANv1.4.pth
 REALESRGAN_MODEL_PATH=/workspace/aporto/upscale/models/realesr-general-x4v3.pth
