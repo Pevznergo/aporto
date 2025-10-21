@@ -4,7 +4,7 @@ from sqlmodel import Session, select
 from fastapi import HTTPException
 from .models import Task, TaskStatus, UpscaleTask, UpscaleStatus
 from .db import engine
-from .ytdlp_wrapper import download_video
+from .ytdlp_wrapper import download_video, download_video_simple
 from .ffmpeg_wrapper import process_video
 from .auto_pipeline import AutoPipeline
 import shutil
@@ -278,7 +278,7 @@ def download_worker():
                     session.add(task)
                     session.commit()
 
-                    video_id, title, file_path = download_video(task.url, RAW_DIR)
+                    video_id, title, file_path = download_video_simple(task.url, RAW_DIR)
                     task.video_id = video_id
                     task.original_filename = title
                     task.downloaded_path = file_path
@@ -384,7 +384,7 @@ def download_worker():
                         session.add(task)
                         session.commit()
 
-                        video_id, title, file_path = download_video(task.url, RAW_DIR)
+                        video_id, title, file_path = download_video_simple(task.url, RAW_DIR)
                         task.video_id = video_id
                         task.original_filename = title
                         task.downloaded_path = file_path
