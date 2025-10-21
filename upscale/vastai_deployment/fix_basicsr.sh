@@ -11,23 +11,8 @@ if [ -z "$VIRTUAL_ENV" ]; then
     source /workspace/aporto/.venv/bin/activate
 fi
 
-# Find the degradations.py file without importing it (to avoid the import error)
-DEGRADATIONS_FILE=$(python3 -c "
-import sys
-import os
-try:
-    import basicsr
-    basicsr_path = os.path.dirname(basicsr.__file__)
-    degradations_path = os.path.join(basicsr_path, 'data', 'degradations.py')
-    if os.path.exists(degradations_path):
-        print(degradations_path)
-    else:
-        print('File not found', file=sys.stderr)
-        sys.exit(1)
-except Exception as e:
-    print(f'Error: {e}', file=sys.stderr)
-    sys.exit(1)
-")
+# Find the degradations.py file using find command (avoid importing broken module)
+DEGRADATIONS_FILE=$(find /workspace/aporto/.venv -name "degradations.py" -path "*/basicsr/data/degradations.py" 2>/dev/null | head -n1)
 
 if [ -z "$DEGRADATIONS_FILE" ]; then
     echo "❌ Could not locate basicsr.data.degradations module"
