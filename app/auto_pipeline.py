@@ -72,6 +72,10 @@ DO NOT invent, paraphrase, or modify any dialogue.
 You can cut mid-sentence and use only part of a phrase.
 Combine fragments from ANY parts of the interview in ANY order.
 Each Short MUST tell a complete story in 15-25 seconds (ideal target: 20 seconds).
+Maintain full context in every clip — the viewer must always understand who or what is being discussed.
+If a fragment refers to “he,” “she,” “they,” or “it,” ensure that earlier in the cut there is clear context establishing who or what is meant.
+Avoid cuts that make the story ambiguous or confusing.
+The goal is for each Short to feel self-contained, even if built from multiple parts of the interview.
 
 STORYTELLING FRAMEWORK - The 20-Second Narrative Arc:
 Each short must follow this three-act structure:
@@ -98,6 +102,7 @@ OUTPUT FORMAT - JSON array with EXACTLY this structure:
     "short_id": 1,
     "title": "Catchy Title With Emoji",
     "duration_estimate": "18 sec",
+    "description": "SEO-friendly description in English with 5-6 hashtags",
     "fragments": [
       {{
         "start": "00:05:23.100",
