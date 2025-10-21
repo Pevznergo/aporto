@@ -14,6 +14,11 @@ import shutil
 import json
 import importlib.util
 from pathlib import Path
+import warnings
+
+# Suppress resource_tracker warnings from multiprocessing
+warnings.filterwarnings('ignore', category=UserWarning, module='multiprocessing.resource_tracker')
+os.environ.setdefault('PYTHONWARNINGS', 'ignore::UserWarning:multiprocessing.resource_tracker')
 
 # Configuration
 DENOISE_STRENGTH = 0.5
@@ -74,6 +79,7 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
     Returns:
         bool: True if successful, False otherwise
     """
+    temp_dir = None
     try:
         print(f"Upscaling video: {input_video_path}")
         print(f"Settings: Denoise={DENOISE_STRENGTH}, Upscale={UPSCALE_FACTOR}x, FaceEnhance={FACE_ENHANCEMENT}")
@@ -156,18 +162,20 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         fps = 0.0
         frame_idx = 0
         cap = cv2.VideoCapture(input_video_path)
-        if cap.isOpened():
-            fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
-            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-            print(f"Video FPS (cv2): {fps}, Total frames (cv2): {frame_count}")
+        try:
+            if cap.isOpened():
+                fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                print(f"Video FPS (cv2): {fps}, Total frames (cv2): {frame_count}")
 
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                frame_path = os.path.join(frames_dir, f"frame_{frame_idx:06d}.png")
-                cv2.imwrite(frame_path, frame)
-                frame_idx += 1
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    frame_path = os.path.join(frames_dir, f"frame_{frame_idx:06d}.png")
+                    cv2.imwrite(frame_path, frame)
+                    frame_idx += 1
+        finally:
             cap.release()
 
         # Fallback to ffmpeg if cv2 failed or extracted nothing
@@ -328,23 +336,29 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         if not out.isOpened():
             raise Exception("Error initializing video writer")
         
-        # Write frames to video
-        for frame_file in sorted(os.listdir(output_frames_dir)):
-            frame_path = os.path.join(output_frames_dir, frame_file)
-            frame = cv2.imread(frame_path)
-            out.write(frame)
+        try:
+            # Write frames to video
+            for frame_file in sorted(os.listdir(output_frames_dir)):
+                frame_path = os.path.join(output_frames_dir, frame_file)
+                frame = cv2.imread(frame_path)
+                out.write(frame)
+        finally:
+            out.release()
         
-        out.release()
         print(f"Upscaled video saved to: {output_video_path}")
-        
-        # Clean up temporary directory
-        shutil.rmtree(temp_dir, ignore_errors=True)
         
         return True
         
     except Exception as e:
         print(f"Error during video upscaling: {e}")
         return False
+    finally:
+        # Always clean up temporary directory
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as cleanup_error:
+                print(f"Warning: Failed to cleanup temp directory: {cleanup_error}")
 
 def receive_video_via_ssh(ssh_user, ssh_host, remote_video_path, local_video_path):
     """
