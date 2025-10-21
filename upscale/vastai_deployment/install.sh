@@ -27,6 +27,25 @@ python -m pip install --upgrade pip setuptools wheel
 # Install requirements (assuming this script is in vastai_deployment/)
 pip install -r upscale/vastai_deployment/requirements.txt
 
+# Patch basicsr import for torchvision 0.19+ (functional_tensor removed)
+echo "🩹 Patching basicsr for torchvision compatibility..."
+PY_FILE=$(python - <<'PY'
+import sys, inspect
+try:
+    import basicsr.data.degradations as d
+    print(inspect.getfile(d))
+except Exception:
+    sys.exit(0)
+PY
+)
+if [ -n "$PY_FILE" ] && grep -q "from torchvision.transforms.functional_tensor import rgb_to_grayscale" "$PY_FILE"; then
+  cp "$PY_FILE" "$PY_FILE.bak"
+  sed -i "s/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/" "$PY_FILE"
+  echo "  Patched: $PY_FILE"
+else
+  echo "  No patch needed."
+fi
+
 # 5. Create necessary directories
 echo "📁 Creating directories..."
 mkdir -p /workspace/aporto/upscale/models

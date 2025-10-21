@@ -1,8 +1,8 @@
 --extra-index-url https://download.pytorch.org/whl/cu121
 # Core dependencies (CUDA 12.1 wheels) - tested working versions
-torch>=2.0.1
-torchvision>=0.15.2
-torchaudio>=2.0.2
+torch==2.4.1
+torchvision==0.19.1
+torchaudio==2.4.1
 numpy>=1.24.0,<3.0.0
 opencv-python>=4.5.0
 Pillow>=8.3.0
