@@ -29,15 +29,7 @@ pip install -r upscale/vastai_deployment/requirements.txt
 
 # Patch basicsr import for torchvision 0.19+ (functional_tensor removed)
 echo "🩹 Patching basicsr for torchvision compatibility..."
-PY_FILE=$(python - <<'PY'
-import sys, inspect
-try:
-    import basicsr.data.degradations as d
-    print(inspect.getfile(d))
-except Exception:
-    sys.exit(0)
-PY
-)
+PY_FILE=$(find /workspace/aporto/.venv -name "degradations.py" -path "*/basicsr/data/degradations.py" 2>/dev/null | head -n1)
 if [ -n "$PY_FILE" ] && grep -q "from torchvision.transforms.functional_tensor import rgb_to_grayscale" "$PY_FILE"; then
   cp "$PY_FILE" "$PY_FILE.bak"
   sed -i "s/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/" "$PY_FILE"
