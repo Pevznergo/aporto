@@ -273,6 +273,12 @@ def upscale_video_with_realesrgan(input_video_path, output_video_path):
         patch_root = _find_patch_root()
         existing_pp = env.get('PYTHONPATH', '')
         env['PYTHONPATH'] = (patch_root if not existing_pp else patch_root + os.pathsep + existing_pp)
+        
+        # Ensure model paths are passed to subprocess
+        if 'REALESRGAN_MODEL_PATH' in os.environ:
+            env['REALESRGAN_MODEL_PATH'] = os.environ['REALESRGAN_MODEL_PATH']
+        if 'GFPGAN_MODEL_PATH' in os.environ:
+            env['GFPGAN_MODEL_PATH'] = os.environ['GFPGAN_MODEL_PATH']
 
         print("Running Real-ESRGAN upscaling...")
         print(f"Command: {' '.join(cmd)}")
