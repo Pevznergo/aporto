@@ -105,7 +105,7 @@ OUTPUT FORMAT - JSON array with EXACTLY this structure:
     "short_id": 1,
     "title": "Catchy Title With Emoji",
     "duration_estimate": "18 sec",
-    "description": "SEO-friendly description in English with 5-6 hashtags",
+    "description": "SEO-friendly description (3 sentences about what the video is about and what happens there) in English with 5-6 hashtags",
     "fragments": [
       {{
         "start": "00:05:23.100",
