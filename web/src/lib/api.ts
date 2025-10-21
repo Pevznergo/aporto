@@ -24,6 +24,29 @@ export type DownloadedItem = {
   created_at: string
 }
 
+export type ClipFragment = {
+  id: number
+  start_time: string
+  end_time: string
+  text: string
+  visual_suggestion?: string | null
+  order: number
+}
+
+export type Clip = {
+  id: number
+  task_id: number
+  short_id: number
+  title: string
+  description: string
+  duration_estimate?: string | null
+  hook_strength?: string | null
+  why_it_works?: string | null
+  file_path?: string | null
+  created_at: string
+  fragments: ClipFragment[]
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || ''
 
 export async function listTasks(): Promise<Task[]> {
@@ -78,4 +101,26 @@ export async function deleteDownload(id: number): Promise<{ ok: boolean }> {
   const res = await fetch(`${API_BASE}/api/downloads/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Failed to delete download')
   return res.json()
+}
+
+export async function getTaskClips(taskId: number): Promise<Clip[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/tasks/${taskId}/clips`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  } catch (e) {
+    console.error('Failed to fetch clips:', e)
+    return []
+  }
+}
+
+export async function getClip(clipId: number): Promise<Clip | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/clips/${clipId}`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  } catch (e) {
+    console.error('Failed to fetch clip:', e)
+    return null
+  }
 }

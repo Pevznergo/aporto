@@ -6,7 +6,10 @@ import whisper
 import torch
 from openai import OpenAI
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
+from sqlmodel import Session
+from .db import engine
+from .models import Clip, ClipFragment
 
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -257,10 +260,66 @@ Here is the transcript:
         
         return created_clips
 
+    def save_clips_to_db(self, task_id: int, clips: List[Dict[str, Any]], clip_files: List[str]) -> None:
+        """Save clip data with titles/descriptions to database"""
+        with Session(engine) as session:
+            # Map clip files by their short_id for easy lookup
+            clip_file_map = {}
+            for file_path in clip_files:
+                # Extract clip number from filename (e.g., "clip_1_Some_Title.mp4" -> 1)
+                filename = os.path.basename(file_path)
+                if filename.startswith("clip_"):
+                    try:
+                        clip_num = int(filename.split("_")[1])
+                        clip_file_map[clip_num] = file_path
+                    except (IndexError, ValueError):
+                        continue
+            
+            # Save each clip with its fragments
+            for clip_data in clips:
+                short_id = clip_data.get("short_id", 0)
+                title = clip_data.get("title", f"Clip {short_id}")
+                description = clip_data.get("description", "")
+                duration_estimate = clip_data.get("duration_estimate", None)
+                hook_strength = clip_data.get("hook_strength", None)
+                why_it_works = clip_data.get("why_it_works", None)
+                file_path = clip_file_map.get(short_id)
+                
+                # Create clip record
+                clip = Clip(
+                    task_id=task_id,
+                    short_id=short_id,
+                    title=title,
+                    description=description,
+                    duration_estimate=duration_estimate,
+                    hook_strength=hook_strength,
+                    why_it_works=why_it_works,
+                    file_path=file_path
+                )
+                session.add(clip)
+                session.commit()
+                session.refresh(clip)
+                
+                # Save fragments
+                fragments = clip_data.get("fragments", [])
+                for order, fragment_data in enumerate(fragments):
+                    fragment = ClipFragment(
+                        clip_id=clip.id,
+                        start_time=fragment_data.get("start", ""),
+                        end_time=fragment_data.get("end", ""),
+                        text=fragment_data.get("text", ""),
+                        visual_suggestion=fragment_data.get("visual_suggestion"),
+                        order=order
+                    )
+                    session.add(fragment)
+                
+                session.commit()
+
     def process_auto_task(
         self, 
         video_path: str, 
-        output_dir: str
+        output_dir: str,
+        task_id: Optional[int] = None
     ) -> Tuple[str, str, List[str]]:
         """
         Complete auto processing pipeline.
@@ -288,5 +347,9 @@ Here is the transcript:
         
         # 3. Cut clips (append first two words of source title to each filename)
         clip_files = self.cut_clips(video_path, clips, output_dir, clip_suffix=clip_suffix)
+        
+        # 4. Save clips to database if task_id is provided
+        if task_id is not None:
+            self.save_clips_to_db(task_id, clips, clip_files)
         
         return transcript_path, clips_json_path, clip_files

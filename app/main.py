@@ -15,7 +15,7 @@ except ImportError:
     pass  # dotenv is optional
 
 from .db import init_db, get_session
-from .models import Task, TaskStatus, UpscaleTask, UpscaleStatus, DownloadedVideo
+from .models import Task, TaskStatus, UpscaleTask, UpscaleStatus, DownloadedVideo, Clip, ClipFragment
 from .schemas import CreateTask, TaskOut, UpscaleTaskOut
 from .worker import start_workers, add_task_to_download, VIDEOS_DIR, CLIPS_UPSCALED_DIR, TO_UPSCALE_DIR, trigger_upscale_scan, list_upscale_tasks, retry_upscale_task, delete_upscale_task, clear_all_upscale_tasks, delete_task as delete_cut_task, clear_all_tasks as clear_all_cut_tasks
 
@@ -114,6 +114,91 @@ def api_delete_task(task_id: int):
 @app.delete("/api/tasks")
 def api_clear_tasks():
     return clear_all_cut_tasks()
+
+
+# Clips API
+@app.get("/api/tasks/{task_id}/clips")
+def get_task_clips(task_id: int, session: Session = Depends(get_session)):
+    """Get all clips for a specific task with their fragments"""
+    # Verify task exists
+    task = session.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Get clips with fragments
+    clips = session.exec(
+        select(Clip).where(Clip.task_id == task_id).order_by(Clip.short_id)
+    ).all()
+    
+    result = []
+    for clip in clips:
+        # Get fragments for this clip
+        fragments = session.exec(
+            select(ClipFragment).where(ClipFragment.clip_id == clip.id).order_by(ClipFragment.order)
+        ).all()
+        
+        clip_data = {
+            "id": clip.id,
+            "short_id": clip.short_id,
+            "title": clip.title,
+            "description": clip.description,
+            "duration_estimate": clip.duration_estimate,
+            "hook_strength": clip.hook_strength,
+            "why_it_works": clip.why_it_works,
+            "file_path": clip.file_path,
+            "created_at": clip.created_at.isoformat(),
+            "fragments": [
+                {
+                    "id": frag.id,
+                    "start_time": frag.start_time,
+                    "end_time": frag.end_time,
+                    "text": frag.text,
+                    "visual_suggestion": frag.visual_suggestion,
+                    "order": frag.order
+                }
+                for frag in fragments
+            ]
+        }
+        result.append(clip_data)
+    
+    return result
+
+
+@app.get("/api/clips/{clip_id}")
+def get_clip(clip_id: int, session: Session = Depends(get_session)):
+    """Get a specific clip with its fragments"""
+    clip = session.get(Clip, clip_id)
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found")
+    
+    # Get fragments for this clip
+    fragments = session.exec(
+        select(ClipFragment).where(ClipFragment.clip_id == clip.id).order_by(ClipFragment.order)
+    ).all()
+    
+    return {
+        "id": clip.id,
+        "task_id": clip.task_id,
+        "short_id": clip.short_id,
+        "title": clip.title,
+        "description": clip.description,
+        "duration_estimate": clip.duration_estimate,
+        "hook_strength": clip.hook_strength,
+        "why_it_works": clip.why_it_works,
+        "file_path": clip.file_path,
+        "created_at": clip.created_at.isoformat(),
+        "fragments": [
+            {
+                "id": frag.id,
+                "start_time": frag.start_time,
+                "end_time": frag.end_time,
+                "text": frag.text,
+                "visual_suggestion": frag.visual_suggestion,
+                "order": frag.order
+            }
+            for frag in fragments
+        ]
+    }
 
 
 # Downloads registry API

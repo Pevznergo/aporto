@@ -1,6 +1,6 @@
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Relationship
 
 
 class TaskStatus:
@@ -67,3 +67,32 @@ class DownloadedVideo(SQLModel, table=True):
     url: str = Field(index=True)
     title: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Clip(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_id: int = Field(foreign_key="task.id")
+    short_id: int  # The clip number from GPT response
+    title: str
+    description: str
+    duration_estimate: Optional[str] = None
+    hook_strength: Optional[str] = None  # high/medium/low
+    why_it_works: Optional[str] = None
+    file_path: Optional[str] = None  # Path to the generated clip file
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationship to fragments
+    fragments: List["ClipFragment"] = Relationship(back_populates="clip")
+
+
+class ClipFragment(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    clip_id: int = Field(foreign_key="clip.id")
+    start_time: str  # Timestamp like "00:05:23.100"
+    end_time: str    # Timestamp like "00:05:28.400"
+    text: str        # Exact text from transcript
+    visual_suggestion: Optional[str] = None
+    order: int = Field(default=0)  # Order of fragment within clip
+    
+    # Relationship back to clip
+    clip: Optional[Clip] = Relationship(back_populates="fragments")

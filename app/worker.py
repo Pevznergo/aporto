@@ -494,6 +494,9 @@ def process_worker():
                                 ses2.commit()
 
                     clip_files = auto_pipeline.cut_clips(task.downloaded_path, clips, out_dir, on_progress=on_progress)
+                    
+                    # Save clips to database
+                    auto_pipeline.save_clips_to_db(task.id, clips, clip_files)
 
                     # Успешно: сохраняем пути, отмечаем done, и только теперь можно удалить исходник, если нужно
                     task.clips_dir = out_dir

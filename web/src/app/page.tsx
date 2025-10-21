@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { useEffect, useState } from 'react'
-import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, type Task, type DownloadedItem } from '@/lib/api'
+import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, type Task, type DownloadedItem, type Clip } from '@/lib/api'
 import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, listUpscaleTasks, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
@@ -29,7 +29,146 @@ function StageChip({ stage }: { stage?: string | null }) {
   )
 }
 
-function VideosLinks({ t }: { t: Task }) {
+function ClipsModal({ task, onClose }: { task: Task; onClose: () => void }) {
+  const [clips, setClips] = useState<Clip[]>([])
+  const [loading, setLoading] = useState(true)
+  
+  useEffect(() => {
+    async function loadClips() {
+      setLoading(true)
+      const clipData = await getTaskClips(task.id)
+      setClips(clipData)
+      setLoading(false)
+    }
+    loadClips()
+  }, [task.id])
+  
+  const videosBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
+  
+  return (
+    <div style={{ 
+      position: 'fixed', 
+      top: 0, 
+      left: 0, 
+      right: 0, 
+      bottom: 0, 
+      background: 'rgba(0, 0, 0, 0.8)', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        background: '#0f1624',
+        border: '1px solid #223046',
+        borderRadius: 12,
+        padding: 24,
+        maxWidth: '90vw',
+        maxHeight: '90vh',
+        overflow: 'auto',
+        width: '800px'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ margin: 0, color: '#e6eaf2' }}>Клипы для: {task.original_filename}</h3>
+          <button 
+            onClick={onClose}
+            style={{ 
+              background: 'transparent', 
+              border: '1px solid #223046', 
+              borderRadius: 8, 
+              padding: '4px 8px',
+              color: '#e6eaf2',
+              cursor: 'pointer'
+            }}
+          >
+            ✕
+          </button>
+        </div>
+        
+        {loading ? (
+          <p style={{ color: '#e6eaf2' }}>Загрузка клипов...</p>
+        ) : clips.length === 0 ? (
+          <p style={{ color: '#e6eaf2' }}>Клипы не найдены в базе данных</p>
+        ) : (
+          <div style={{ display: 'grid', gap: 16 }}>
+            {clips.map((clip) => (
+              <div key={clip.id} style={{
+                background: '#162033',
+                border: '1px solid #223046',
+                borderRadius: 8,
+                padding: 16
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div>
+                    <h4 style={{ margin: 0, marginBottom: 4, color: '#e6eaf2' }}>#{clip.short_id}: {clip.title}</h4>
+                    <p style={{ margin: 0, marginBottom: 8, color: '#9ca3af', fontSize: 14 }}>{clip.description}</p>
+                    <div style={{ display: 'flex', gap: 12, fontSize: 12, color: '#6b7280' }}>
+                      {clip.duration_estimate && <span>Длительность: {clip.duration_estimate}</span>}
+                      {clip.hook_strength && <span>Hook: {clip.hook_strength}</span>}
+                    </div>
+                  </div>
+                  {clip.file_path && (
+                    <a 
+                      href={`${videosBase}/clips/${clip.file_path.split('/').pop()}`}
+                      target="_blank"
+                      style={{
+                        padding: '6px 12px',
+                        background: '#2563eb',
+                        color: 'white',
+                        borderRadius: 6,
+                        textDecoration: 'none',
+                        fontSize: 12
+                      }}
+                    >
+                      Скачать
+                    </a>
+                  )}
+                </div>
+                
+                {clip.why_it_works && (
+                  <div style={{ marginBottom: 12 }}>
+                    <strong style={{ color: '#e6eaf2', fontSize: 12 }}>Почему работает:</strong>
+                    <p style={{ margin: 0, marginTop: 4, color: '#9ca3af', fontSize: 12 }}>{clip.why_it_works}</p>
+                  </div>
+                )}
+                
+                {clip.fragments.length > 0 && (
+                  <div>
+                    <strong style={{ color: '#e6eaf2', fontSize: 12 }}>Фрагменты:</strong>
+                    <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                      {clip.fragments.map((fragment) => (
+                        <div key={fragment.id} style={{
+                          background: '#0f1624',
+                          border: '1px solid #374151',
+                          borderRadius: 4,
+                          padding: 8
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, color: '#6b7280' }}>
+                              {fragment.start_time} - {fragment.end_time}
+                            </span>
+                            {fragment.visual_suggestion && (
+                              <span style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>
+                                {fragment.visual_suggestion}
+                              </span>
+                            )}
+                          </div>
+                          <p style={{ margin: 0, fontSize: 12, color: '#e6eaf2' }}>{fragment.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function VideosLinks({ t, onShowClips }: { t: Task; onShowClips: () => void }) {
   const videosBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
   const fileName = (p?: string | null) => (p ? p.split('/').pop() : null)
   const dl = t.downloaded_path ? `${videosBase}/videos/${fileName(t.downloaded_path)}` : null
@@ -45,7 +184,23 @@ function VideosLinks({ t }: { t: Task }) {
         {processed ? (
           <a href={processed} download>результат</a>
         ) : t.mode === 'auto' ? (
-          clips ? <a href={clips} target="_blank">папка клипов</a> : '-'
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {clips ? <a href={clips} target="_blank">папка клипов</a> : '-'}
+            <button 
+              onClick={onShowClips}
+              style={{
+                padding: '2px 6px',
+                fontSize: 11,
+                border: '1px solid #223046',
+                background: '#162033',
+                color: '#e6eaf2',
+                borderRadius: 4,
+                cursor: 'pointer'
+              }}
+            >
+              Клипы из БД
+            </button>
+          </div>
         ) : (
           '-'
         )}
@@ -195,6 +350,7 @@ export default function Page() {
   const [cutProcessing, setCutProcessing] = useState(0)
   const [upQueued, setUpQueued] = useState(0)
   const [upProcessing, setUpProcessing] = useState(0)
+  const [selectedTaskForClips, setSelectedTaskForClips] = useState<Task | null>(null)
 
   async function refresh() {
     const data = await listTasks()
@@ -367,7 +523,7 @@ export default function Page() {
                   </div>
                 </td>
                 <td><a href={t.url} target="_blank">ссылка</a></td>
-                <VideosLinks t={t} />
+                <VideosLinks t={t} onShowClips={() => setSelectedTaskForClips(t)} />
                 <td>{t.error ? <span style={{ color: '#b00020' }}>{t.error}</span> : '-'}</td>
                 <td>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -441,6 +597,13 @@ export default function Page() {
             </tbody>
           </table>
         </section>
+      )}
+      
+      {selectedTaskForClips && (
+        <ClipsModal 
+          task={selectedTaskForClips} 
+          onClose={() => setSelectedTaskForClips(null)}
+        />
       )}
     </div>
   )
