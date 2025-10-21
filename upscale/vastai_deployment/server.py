@@ -353,18 +353,41 @@ def _ask_openai_for_clips(transcript: list, out_json: str) -> list:
     api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set on server")
+    print(f"[GPT] Preparing to ask OpenAI for clips, transcript segments: {len(transcript)}")
     client = OpenAI(api_key=api_key)
     prompt = f"""
 You are an expert video editor and storyteller, specializing in creating viral YouTube Shorts from interview content. Your goal is to find and condense complete mini-stories from the transcript.
 
 TASK: Analyze the provided JSON transcript and CREATE 5 compelling short videos (approximately 20 seconds each) that tell complete, self-contained stories by creatively remixing fragments from different parts of the interview.
 
+TWO-STAGE SELECTION PROCESS
+
+Step 1: Candidate Generation
+Identify 10 potential short video ideas (each 15–25 seconds long) that could become strong stories.
+Each candidate should follow the storytelling structure below and feel emotionally engaging, clear, and complete.
+
+Step 2: Ranking and Refinement
+Rank the 10 candidates from 1 to 10 based on:
+
+Emotional resonance (how much it makes the viewer feel)
+
+Clarity and completeness of the story
+
+Virality potential (likelihood to perform well on YouTube Shorts)
+
+Select the top 5 and refine them into final versions that are polished, well-paced, and satisfying.
+
 CRITICAL RULES:
+
 Use ONLY the exact words and phrases from the provided JSON transcript.
 DO NOT invent, paraphrase, or modify any dialogue.
 You can cut mid-sentence and use only part of a phrase.
 Combine fragments from ANY parts of the interview in ANY order.
 Each Short MUST tell a complete story in 15-25 seconds (ideal target: 20 seconds).
+Maintain full context in every clip — the viewer must always understand who or what is being discussed.
+If a fragment refers to "he," "she," "they," or "it," ensure that earlier in the cut there is clear context establishing who or what is meant.
+Avoid cuts that make the story ambiguous or confusing.
+The goal is for each Short to feel self-contained, even if built from multiple parts of the interview.
 
 STORYTELLING FRAMEWORK - The 20-Second Narrative Arc:
 Each short must follow this three-act structure:
@@ -385,18 +408,32 @@ The lesson learned, outcome, or new perspective
 Provides satisfying emotional payoff
 
 OUTPUT FORMAT - JSON array with EXACTLY this structure:
+
 [
   {{
     "short_id": 1,
     "title": "Catchy Title With Emoji",
     "duration_estimate": "18 sec",
+    "description": "SEO-friendly description (3 sentences about what the video is about and what happens there) in English with 5-6 hashtags",
     "fragments": [
-      {{ "start": "00:05:23.100", "end": "00:05:28.400", "text": "exact text", "visual_suggestion": "idea" }}
+      {{
+        "start": "00:05:23.100",
+        "end": "00:05:28.400",
+        "text": "exact text from JSON here",
+        "visual_suggestion": "specific visual idea"
+      }},
+      {{
+        "start": "00:12:45.200",
+        "end": "00:12:48.800",
+        "text": "exact text from JSON here",
+        "visual_suggestion": "specific visual idea"
+      }}
     ],
     "hook_strength": "high/medium/low",
-    "why_it_works": "Brief"
+    "why_it_works": "Brief explanation of editing logic"
   }}
 ]
+
 Return ONLY the valid JSON array. No other text.
 
 Here is the transcript:
@@ -404,19 +441,36 @@ Here is the transcript:
 """
     try:
         model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        print(f"[GPT] Calling OpenAI API with model: {model_name}")
         resp = client.chat.completions.create(
             model=model_name,
             messages=[{"role": "user", "content": prompt}],
         )
         content = resp.choices[0].message.content or "[]"
+        print(f"[GPT] Received response from OpenAI, length: {len(content)} chars")
+        print(f"[GPT] Response preview: {content[:200]}...")
     except Exception as e:
+        print(f"[GPT] ERROR calling OpenAI API: {type(e).__name__}: {e}")
+        import traceback
+        print(f"[GPT] Traceback:\n{traceback.format_exc()}")
         content = "[]"
+    
+    print(f"[GPT] Saving response to: {out_json}")
     with open(out_json, 'w', encoding='utf-8') as f:
         f.write(content)
+    
     try:
+        print(f"[GPT] Parsing JSON response...")
         data = json.loads(content)
-        return data if isinstance(data, list) else []
-    except Exception:
+        if isinstance(data, list):
+            print(f"[GPT] Successfully parsed {len(data)} clips from response")
+            return data
+        else:
+            print(f"[GPT] WARNING: Response is not a list, got type: {type(data)}")
+            return []
+    except Exception as e:
+        print(f"[GPT] ERROR parsing JSON response: {type(e).__name__}: {e}")
+        print(f"[GPT] Raw content: {content[:500]}...")
         return []
 
 
@@ -516,6 +570,7 @@ def cut_from_url():
     global job_counter
     try:
         data = request.get_json()
+        print(f"[GPU-CUT] Received cut_url request: {data}")
         url = data.get('url')
         input_path = data.get('input_path')
         provided_title = data.get('title')
@@ -537,16 +592,22 @@ def cut_from_url():
             upscale_flag = bool(upscale_from_req)
         # Validate inputs: either input_path exists or we have a URL
         if input_path:
+            print(f"[GPU-CUT] Validating input_path: {input_path}")
             if not os.path.isfile(input_path):
+                print(f"[GPU-CUT] ERROR: input_path not found: {input_path}")
                 return jsonify({"error": f"input_path not found: {input_path}"}), 400
             ok, err = _ffprobe_video_ok(input_path)
             if not ok:
+                print(f"[GPU-CUT] ERROR: Invalid input video: {err}")
                 return jsonify({"error": f"Invalid input video: {err}"}), 400
+            print(f"[GPU-CUT] Input validation successful for: {input_path}")
         elif not url:
+            print(f"[GPU-CUT] ERROR: No input_path or url provided")
             return jsonify({"error": "Provide either input_path or url"}), 400
         # Prepare job
         job_counter += 1
         job_id = job_counter
+        print(f"[GPU-CUT] Creating job_id={job_id} with model_size={model_size}, resize={resize_flag}, upscale={upscale_flag}")
         jobs[job_id] = {
             "status": "processing",
             "type": "cut",
@@ -557,9 +618,11 @@ def cut_from_url():
             "upscale": upscale_flag
         }
         # Background thread
+        print(f"[GPU-CUT] Starting background thread for job_id={job_id}")
         t = threading.Thread(target=process_cut_job, args=(job_id, url, model_size, to_dir, out_dir, resize_flag, aspect_tuple, input_path, provided_title, upscale_flag))
         t.daemon = True
         t.start()
+        print(f"[GPU-CUT] Job submitted successfully: job_id={job_id}")
         return jsonify({"job_id": job_id, "status": "processing"}), 202
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -569,11 +632,17 @@ def cut_from_url():
 
 def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir: str, resize_flag: bool, aspect_ratio: tuple[int, int], input_path: str | None = None, title: str | None = None, upscale_flag: bool = True):
     try:
+        print(f"[GPU-CUT-{job_id}] Starting cut job processing")
+        print(f"[GPU-CUT-{job_id}] Parameters: model_size={model_size}, resize={resize_flag}, aspect_ratio={aspect_ratio}, upscale={upscale_flag}")
+        
         # 1) Obtain input path
         if input_path and os.path.isfile(input_path):
+            print(f"[GPU-CUT-{job_id}] Using provided input_path: {input_path}")
             video_path = input_path
         else:
+            print(f"[GPU-CUT-{job_id}] Downloading video from URL: {url}")
             video_path = _yt_dlp_download(url, to_dir)
+            print(f"[GPU-CUT-{job_id}] Download completed: {video_path}")
         if title and isinstance(title, str) and title.strip():
             safe = "".join(c for c in title if c.isalnum() or c in ("_", "-", ".", "!", "?", ":", ",", "'", "&", " ")).rstrip().replace(" ", "_")
             if not safe:
@@ -588,18 +657,32 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
             parts = [p for p in name.replace('_', ' ').replace('-', ' ').split() if p]
             return "_".join(parts[:2]) if parts else ""
         clip_suffix = _first_two_words(safe)
+        
         # 2) Transcribe
+        print(f"[GPU-CUT-{job_id}] Starting transcription with model_size={model_size}")
+        print(f"[GPU-CUT-{job_id}] Loading Whisper model...")
         model = _load_whisper_model(model_size)
+        print(f"[GPU-CUT-{job_id}] Whisper model loaded successfully")
+        
         tr_path = os.path.join(dest_dir, f"{safe}_transcript.json")
+        print(f"[GPU-CUT-{job_id}] Transcribing video: {video_path}")
+        print(f"[GPU-CUT-{job_id}] Transcript output path: {tr_path}")
         transcript = _transcribe_to_json(model, video_path, tr_path)
+        print(f"[GPU-CUT-{job_id}] Transcription completed: {len(transcript)} segments")
         # 3) Ask OpenAI for clips
+        print(f"[GPU-CUT-{job_id}] Asking OpenAI for clip suggestions...")
         clips_json_path = os.path.join(dest_dir, f"{safe}_clips.json")
         clips = _ask_openai_for_clips(transcript, clips_json_path)
+        print(f"[GPU-CUT-{job_id}] OpenAI returned {len(clips)} clip suggestions")
+        
         # 4) Cut
+        print(f"[GPU-CUT-{job_id}] Starting clip cutting with ffmpeg...")
         made = _cut_clips_ffmpeg(video_path, clips, dest_dir, clip_suffix=clip_suffix)
+        print(f"[GPU-CUT-{job_id}] Cut {len(made)} clips successfully")
 
         # 5) Optional resize to aspect ratio using clipsai (strict: no fallback). Results must replace original clip files.
         if resize_flag and made:
+            print(f"[GPU-CUT-{job_id}] Starting resize to aspect ratio {aspect_ratio}...")
             token = os.environ.get('PYANNOTE_AUTH_TOKEN') or os.environ.get('HUGGINGFACE_TOKEN')
             if not clipsai_resize:
                 raise RuntimeError("clipsai not installed on server, cannot perform speaker-centered resize")
@@ -626,6 +709,7 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
 
         # 6) Optional upscaling of clips in place (write over original filenames inside dest_dir)
         if upscale_flag and made:
+            print(f"[GPU-CUT-{job_id}] Starting upscaling of {len(made)} clips...")
             import shutil as _sh
             for src in made:
                 name = os.path.basename(src)
@@ -641,6 +725,7 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
                 os.replace(tmp_out, src)
 
         # 7) Zip outputs for download (folder named as source video, files are the final upscaled clips)
+        print(f"[GPU-CUT-{job_id}] Creating archive...")
         archive_path = os.path.join(out_dir, f"{safe}.zip")
         import zipfile
         with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
@@ -652,6 +737,8 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
             for p in made:
                 if os.path.exists(p):
                     zf.write(p, os.path.relpath(p, out_dir))
+        print(f"[GPU-CUT-{job_id}] Job completed successfully!")
+        print(f"[GPU-CUT-{job_id}] Output archive: {archive_path}")
         jobs[job_id]['status'] = 'completed'
         jobs[job_id]['output_dir'] = dest_dir
         jobs[job_id]['output_archive'] = archive_path
@@ -672,6 +759,9 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
         except Exception:
             pass
     except Exception as e:
+        print(f"[GPU-CUT-{job_id}] ERROR: Job failed with exception: {type(e).__name__}: {e}")
+        import traceback
+        print(f"[GPU-CUT-{job_id}] Traceback:\n{traceback.format_exc()}")
         jobs[job_id]['status'] = 'failed'
         jobs[job_id]['error'] = str(e)
         jobs[job_id]['end_time'] = time.time()

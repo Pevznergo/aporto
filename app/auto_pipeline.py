@@ -46,6 +46,8 @@ class AutoPipeline:
 
     def ask_gpt(self, transcript: List[Dict[str, Any]], clips_path: str) -> List[Dict[str, Any]]:
         """Send transcript to GPT for clip selection"""
+        import logging
+        logging.info(f"[GPT] Preparing to ask OpenAI for clips, transcript segments: {len(transcript)}")
         prompt = f"""
 You are an expert video editor and storyteller, specializing in creating viral YouTube Shorts from interview content. Your goal is to find and condense complete mini-stories from the transcript.
 
@@ -132,24 +134,36 @@ Here is the transcript:
 """
         try:
             model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            logging.info(f"[GPT] Calling OpenAI API with model: {model_name}")
             response = self.client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "user", "content": prompt}]
             )
             clips_json = response.choices[0].message.content or "[]"
+            logging.info(f"[GPT] Received response from OpenAI, length: {len(clips_json)} chars")
+            logging.info(f"[GPT] Response preview: {clips_json[:200]}...")
         except Exception as e:
-            print(f"Error calling OpenAI API: {e}")
+            logging.error(f"[GPT] ERROR calling OpenAI API: {type(e).__name__}: {e}", exc_info=True)
             clips_json = "[]"
         
         # Save raw response
+        logging.info(f"[GPT] Saving response to: {clips_path}")
         with open(clips_path, "w", encoding="utf-8") as f:
             f.write(clips_json)
         
         # Parse and return
         try:
+            logging.info(f"[GPT] Parsing JSON response...")
             clips_data = json.loads(clips_json)
-            return clips_data if isinstance(clips_data, list) else []
-        except Exception:
+            if isinstance(clips_data, list):
+                logging.info(f"[GPT] Successfully parsed {len(clips_data)} clips from response")
+                return clips_data
+            else:
+                logging.warning(f"[GPT] WARNING: Response is not a list, got type: {type(clips_data)}")
+                return []
+        except Exception as e:
+            logging.error(f"[GPT] ERROR parsing JSON response: {type(e).__name__}: {e}")
+            logging.error(f"[GPT] Raw content: {clips_json[:500]}...")
             return []
 
     def cut_clips(self, video_path: str, clips: List[Dict[str, Any]], output_dir: str, on_progress=None, clip_suffix: str = "") -> List[str]:

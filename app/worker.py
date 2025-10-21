@@ -135,6 +135,7 @@ def _gpu_http_base() -> str:
 def _gpu_cut_submit(input_path: str, url: str, model_size: str, resize: bool, aspect_ratio=(9,16), to_dir: str | None = None, out_dir: str | None = None, title: str | None = None) -> str:
     base = _gpu_http_base()
     if not base:
+        logging.error("[GPU-CUT] VAST_UPSCALE_URL is not set")
         raise RuntimeError('VAST_UPSCALE_URL is not set')
     payload = {
         'input_path': input_path,
@@ -147,18 +148,44 @@ def _gpu_cut_submit(input_path: str, url: str, model_size: str, resize: bool, as
     if out_dir: payload['out_dir'] = out_dir
     if title and isinstance(title, str) and title.strip():
         payload['title'] = title
-    r = requests.post(f"{base}/cut_url", json=payload, timeout=30)
+    
+    logging.info(f"[GPU-CUT] Submitting job to {base}/cut_url")
+    logging.info(f"[GPU-CUT] Payload: {payload}")
+    
+    try:
+        r = requests.post(f"{base}/cut_url", json=payload, timeout=30)
+        logging.info(f"[GPU-CUT] Response status: {r.status_code}")
+        logging.info(f"[GPU-CUT] Response body: {r.text[:500]}")
+    except Exception as e:
+        logging.error(f"[GPU-CUT] Request exception: {type(e).__name__}: {e}", exc_info=True)
+        raise
+    
     if r.status_code not in (200,202):
+        logging.error(f"[GPU-CUT] Submit failed with status {r.status_code}: {r.text}")
         raise RuntimeError(f"GPU cut submit failed: {r.text}")
+    
     data = r.json()
-    return str(data.get('job_id'))
+    job_id = str(data.get('job_id'))
+    logging.info(f"[GPU-CUT] Job submitted successfully: job_id={job_id}")
+    return job_id
 
 def _gpu_cut_status(job_id: str) -> dict:
     base = _gpu_http_base()
-    r = requests.get(f"{base}/cut_job/{job_id}", timeout=15)
-    if r.status_code != 200:
-        return {'status':'failed'}
-    return r.json()
+    logging.debug(f"[GPU-CUT] Checking status for job_id={job_id} at {base}/cut_job/{job_id}")
+    
+    try:
+        r = requests.get(f"{base}/cut_job/{job_id}", timeout=15)
+        logging.debug(f"[GPU-CUT] Status check response: status_code={r.status_code}")
+        if r.status_code != 200:
+            logging.warning(f"[GPU-CUT] Status check failed with code {r.status_code}: {r.text[:200]}")
+            return {'status':'failed'}
+        
+        result = r.json()
+        logging.debug(f"[GPU-CUT] Status response: {result}")
+        return result
+    except Exception as e:
+        logging.error(f"[GPU-CUT] Status check exception for job_id={job_id}: {type(e).__name__}: {e}")
+        return {'status':'failed', 'error': str(e)}
 
 def _gpu_ssh_params():
     """Canonicalize SSH params: prefer VAST_* then GPU_*; default port/user as before."""
@@ -224,9 +251,17 @@ def _gpu_scp_upload(local_path: str, remote_dir: str) -> str:
         logging.info(f"[gpu-scp] upload cmd: {full_cmd}")
     except Exception:
         logging.info(f"[gpu-scp] upload -> {remote_path}")
+    
+    logging.info(f"[gpu-scp] Starting upload of {os.path.basename(local_path)} ({os.path.getsize(local_path)} bytes)...")
     r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=600)
+    
     if r.returncode != 0:
+        logging.error(f"[gpu-scp] Upload FAILED with return code {r.returncode}")
+        logging.error(f"[gpu-scp] STDERR: {r.stderr}")
+        logging.error(f"[gpu-scp] STDOUT: {r.stdout}")
         raise RuntimeError(f"scp upload failed: {r.stderr or r.stdout}")
+    
+    logging.info(f"[gpu-scp] Upload completed successfully: {remote_path}")
     return remote_path
 
 
@@ -249,9 +284,17 @@ def _gpu_scp_download(remote_path: str, local_dir: str) -> str:
         logging.info(f"[gpu-scp] download cmd: {full_cmd}")
     except Exception:
         logging.info(f"[gpu-scp] download <- {remote_path}")
+    
+    logging.info(f"[gpu-scp] Starting download of {os.path.basename(remote_path)}...")
     r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=600)
+    
     if r.returncode != 0:
+        logging.error(f"[gpu-scp] Download FAILED with return code {r.returncode}")
+        logging.error(f"[gpu-scp] STDERR: {r.stderr}")
+        logging.error(f"[gpu-scp] STDOUT: {r.stdout}")
         raise RuntimeError(f"scp download failed: {r.stderr or r.stdout}")
+    
+    logging.info(f"[gpu-scp] Download completed successfully: {local_path} ({os.path.getsize(local_path)} bytes)")
     return local_path
 
 def download_worker():
@@ -271,6 +314,7 @@ def download_worker():
                 mode = getattr(task, "mode", "simple")
                 if gpu_cut and mode in ("auto", "auto_resize"):
                     # Download locally first (as before), then upload to GPU and submit cut job using input_path
+                    logging.info(f"[task-{task_id}] Starting GPU cut pipeline for mode={mode}, url={task.url}")
                     task.status = TaskStatus.DOWNLOADING
                     task.stage = "downloading"
                     task.progress = 5
@@ -278,7 +322,9 @@ def download_worker():
                     session.add(task)
                     session.commit()
 
+                    logging.info(f"[task-{task_id}] Starting video download...")
                     video_id, title, file_path = download_video_simple(task.url, RAW_DIR)
+                    logging.info(f"[task-{task_id}] Video downloaded: video_id={video_id}, title={title}, path={file_path}")
                     task.video_id = video_id
                     task.original_filename = title
                     task.downloaded_path = file_path
@@ -296,13 +342,16 @@ def download_worker():
                     base = os.getenv('VAST_CUT_BASE_DIR') or os.getenv('GPU_CUT_BASE_DIR') or '/workspace/cut'
                     to_dir = f"{base.rstrip('/')}/to_cut"
                     out_dir = f"{base.rstrip('/')}/cuted"
+                    logging.info(f"[task-{task_id}] Remote dirs: base={base}, to_dir={to_dir}, out_dir={out_dir}")
 
                     # Upload to GPU
                     task.stage = "uploading_gpu"
                     task.progress = 15
                     session.add(task)
                     session.commit()
+                    logging.info(f"[task-{task_id}] Starting GPU upload: {file_path} -> {to_dir}")
                     remote_input = _gpu_scp_upload(file_path, to_dir)
+                    logging.info(f"[task-{task_id}] GPU upload completed: remote_input={remote_input}")
 
                     # Submit GPU cut job with direct input_path
                     task.stage = "remote_submit"
@@ -311,7 +360,9 @@ def download_worker():
                     session.commit()
                     model_size = os.getenv("WHISPER_MODEL", "small")
                     do_resize = (mode == "auto_resize")
+                    logging.info(f"[task-{task_id}] Submitting GPU cut job: remote_input={remote_input}, model_size={model_size}, resize={do_resize}, url={task.url}")
                     job_id = _gpu_cut_submit(remote_input, task.url, model_size=model_size, resize=do_resize, aspect_ratio=(9,16), to_dir=to_dir, out_dir=out_dir, title=title)
+                    logging.info(f"[task-{task_id}] GPU cut job submitted successfully: job_id={job_id}")
 
                     # After successful submit, delete local original file
                     try:
@@ -327,12 +378,17 @@ def download_worker():
                     task.updated_at = time_utc()
                     session.add(task)
                     session.commit()
+                    logging.info(f"[task-{task_id}] Entering polling loop for job_id={job_id}")
 
                     # Poll
                     last_pct = 30
+                    poll_count = 0
                     while True:
+                        poll_count += 1
+                        logging.debug(f"[task-{task_id}] Polling status (attempt #{poll_count})...")
                         info = _gpu_cut_status(job_id)
                         st = info.get("status")
+                        logging.info(f"[task-{task_id}] Status poll #{poll_count}: status={st}, info={info}")
                         if st == "processing":
                             last_pct = min(last_pct + 3, 85)
                             task.progress = last_pct
@@ -342,7 +398,9 @@ def download_worker():
                             time.sleep(5)
                         elif st == "completed":
                             remote_zip = info.get("output_archive")
+                            logging.info(f"[task-{task_id}] Job completed! output_archive={remote_zip}")
                             if not remote_zip:
+                                logging.error(f"[task-{task_id}] ERROR: Job completed but no archive path in response: {info}")
                                 raise RuntimeError("Remote cut completed but no archive path provided")
                             # Download archive to local cuted dir
                             local_cuted_base = os.path.abspath(os.path.join(BASE_DIR, "cuted"))
@@ -373,7 +431,8 @@ def download_worker():
                             session.commit()
                             break
                         else:
-                            raise RuntimeError(f"Remote cut job failed: status={st}")
+                            logging.error(f"[task-{task_id}] ERROR: Unexpected job status={st}, full_info={info}")
+                            raise RuntimeError(f"Remote cut job failed: status={st}, info={info}")
                 else:
                     # Simple mode: only download locally and finish; no local processing/cutting
                     if mode == "simple":
@@ -409,6 +468,7 @@ def download_worker():
                         # Non-simple Cut is GPU-only; do not run locally
                         raise RuntimeError("Cut processing is GPU-only. Start the GPU server and retry.")
             except Exception as e:
+                logging.error(f"[task-{task_id}] EXCEPTION in download_worker: {type(e).__name__}: {e}", exc_info=True)
                 task.error = str(e)
                 task.status = TaskStatus.ERROR
                 task.stage = "error"
