@@ -423,6 +423,33 @@ def download_worker():
                             cj_path = os.path.join(dest_dir, f"{base_name}_clips.json")
                             task.transcript_path = tr_path if os.path.exists(tr_path) else None
                             task.clips_json_path = cj_path if os.path.exists(cj_path) else None
+                            
+                            # Load clips JSON and save to database
+                            if task.clips_json_path and os.path.exists(task.clips_json_path):
+                                try:
+                                    import json
+                                    logging.info(f"[task-{task_id}] Loading clips JSON from {task.clips_json_path}")
+                                    with open(task.clips_json_path, 'r', encoding='utf-8') as f:
+                                        clips_data = json.load(f)
+                                    
+                                    # Collect clip files from the extracted directory
+                                    clip_files = []
+                                    if os.path.isdir(dest_dir):
+                                        for fname in sorted(os.listdir(dest_dir)):
+                                            if fname.startswith('clip_') and fname.endswith('.mp4'):
+                                                clip_files.append(os.path.join(dest_dir, fname))
+                                    
+                                    logging.info(f"[task-{task_id}] Found {len(clip_files)} clip files, saving {len(clips_data)} clips to database")
+                                    
+                                    # Import AutoPipeline and save clips to DB
+                                    from .auto_pipeline import AutoPipeline
+                                    # Create a temporary instance just for save_clips_to_db method
+                                    temp_pipeline = AutoPipeline.__new__(AutoPipeline)
+                                    temp_pipeline.save_clips_to_db(task.id, clips_data, clip_files)
+                                    logging.info(f"[task-{task_id}] Successfully saved clips to database")
+                                except Exception as e:
+                                    logging.error(f"[task-{task_id}] Failed to save clips to database: {type(e).__name__}: {e}", exc_info=True)
+                            
                             task.status = TaskStatus.DONE
                             task.stage = "done"
                             task.progress = 100
