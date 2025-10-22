@@ -44,12 +44,31 @@ class AutoPipeline:
         
         return transcript
 
-    def ask_gpt(self, transcript: List[Dict[str, Any]], clips_path: str) -> List[Dict[str, Any]]:
+    def ask_gpt(self, transcript: List[Dict[str, Any]], clips_path: str, video_title: Optional[str] = None) -> List[Dict[str, Any]]:
         """Send transcript to GPT for clip selection"""
         import logging
         logging.info(f"[GPT] Preparing to ask OpenAI for clips, transcript segments: {len(transcript)}")
+        
+        # Extract guest name from video title if available
+        guest_name_instruction = ""
+        if video_title:
+            guest_name_instruction = f"""
+IMPORTANT - GUEST NAME USAGE:
+The original video title is: "{video_title}"
+
+Before creating titles, identify the guest's name from the video title above.
+Then follow these rules:
+1. Use the guest's actual name at the BEGINNING of the title or description (instead of "He", "She", "They") to establish context
+2. After the first mention with the guest's name, you can use pronouns (he/she/they) in subsequent sentences
+3. This creates natural flow: start with the name for clarity, then use pronouns
+
+Example: Instead of "She Reveals Her Secret" → "[Guest Name] Reveals Her Secret"
+Example: Instead of "How He Built His Empire" → "[Guest Name]: How He Built His Empire" 
+Example for description: "[Guest Name] talks about his journey. He explains how he overcame..." (name first, then pronouns)
+"""
+        
         prompt = f"""
-You are an expert video editor and storyteller, specializing in creating viral YouTube Shorts from interview content. Your goal is to find and condense complete mini-stories from the transcript.
+You are an expert video editor and storyteller, specializing in creating viral YouTube Shorts from interview content. Your goal is to find and condense complete mini-stories from the transcript.{guest_name_instruction}
 
 TASK: Analyze the provided JSON transcript and CREATE 5 compelling short videos (approximately 20 seconds each) that tell complete, self-contained stories by creatively remixing fragments from different parts of the interview.
 
@@ -333,7 +352,8 @@ Here is the transcript:
         self, 
         video_path: str, 
         output_dir: str,
-        task_id: Optional[int] = None
+        task_id: Optional[int] = None,
+        video_title: Optional[str] = None
     ) -> Tuple[str, str, List[str]]:
         """
         Complete auto processing pipeline.
@@ -357,7 +377,7 @@ Here is the transcript:
         transcript = self.transcribe_video(video_path, transcript_path)
         
         # 2. Get clips from GPT
-        clips = self.ask_gpt(transcript, clips_json_path)
+        clips = self.ask_gpt(transcript, clips_json_path, video_title=video_title)
         
         # 3. Cut clips (append first two words of source title to each filename)
         clip_files = self.cut_clips(video_path, clips, output_dir, clip_suffix=clip_suffix)

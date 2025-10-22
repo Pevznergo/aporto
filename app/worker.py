@@ -559,7 +559,7 @@ def process_worker():
                     session.add(task)
                     session.commit()
                     clips_json_path = os.path.join(out_dir, f"{base_name}_clips.json")
-                    clips = auto_pipeline.ask_gpt(transcript, clips_json_path)
+                    clips = auto_pipeline.ask_gpt(transcript, clips_json_path, video_title=task.original_filename)
 
                     # 3) Cut clips
                     total = max(len(clips), 1)
