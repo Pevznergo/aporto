@@ -3,7 +3,7 @@
 import React from 'react'
 /// <reference types="react" />
 import { useEffect, useState } from 'react'
-import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, type Task, type DownloadedItem, type Clip } from '@/lib/api'
+import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, API_BASE, type Task, type DownloadedItem, type Clip } from '@/lib/api'
 import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, listUpscaleTasks, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
@@ -375,7 +375,6 @@ export default function Page() {
 
       if (tab === 'clips') {
         try {
-          const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || ''
           console.log('Fetching clips from:', `${API_BASE}/api/clips`)
           const response = await fetch(`${API_BASE}/api/clips`, { cache: 'no-store', mode: 'cors' })
           console.log('Clips response status:', response.status)
