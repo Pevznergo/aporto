@@ -1,8 +1,9 @@
 'use client'
 
 import React from 'react'
+/// <reference types="react" />
 import { useEffect, useState } from 'react'
-import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, type Task, type DownloadedItem, type Clip } from '@/lib/api'
+import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, type Task, type DownloadedItem } from '@/lib/api'
 import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, listUpscaleTasks, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
@@ -30,7 +31,7 @@ function StageChip({ stage }: { stage?: string | null }) {
 }
 
 function ClipsModal({ task, onClose }: { task: Task; onClose: () => void }) {
-  const [clips, setClips] = useState<Clip[]>([])
+  const [clips, setClips] = useState<ClipItem[]>([])
   const [loading, setLoading] = useState(true)
   
   useEffect(() => {
@@ -212,7 +213,19 @@ function VideosLinks({ t, onShowClips }: { t: Task; onShowClips: () => void }) {
   )
 }
 
-type Tab = 'cut' | 'upscale' | 'downloads'
+type Tab = 'cut' | 'upscale' | 'downloads' | 'clips'
+
+interface ClipItem {
+  id: number
+  task_id: number
+  video_path: string
+  status: 'pending' | 'published' | 'cancelled'
+  channel: number
+  created_at: string
+  updated_at: string
+  title?: string
+  duration?: number
+}
 
 function UpscaleSection() {
   const { tasks, refresh } = useUpscaleTasks()
@@ -351,12 +364,25 @@ export default function Page() {
   const [upQueued, setUpQueued] = useState(0)
   const [upProcessing, setUpProcessing] = useState(0)
   const [selectedTaskForClips, setSelectedTaskForClips] = useState<Task | null>(null)
+  const [clips, setClips] = useState<ClipItem[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [channelFilter, setChannelFilter] = useState<string>('all')
 
   async function refresh() {
     const data = await listTasks()
     setTasks(data)
     const d = await listDownloads()
     setDownloads(d)
+    
+    if (tab === 'clips') {
+      try {
+        const clipsData = await fetch('/api/clips').then(res => res.json())
+        setClips(clipsData)
+      } catch (e) {
+        console.error('Failed to fetch clips:', e)
+      }
+    }
     try {
       const ups = await listUpscaleTasks()
       setUpQueued(ups.filter(u => (u.status || '').toLowerCase() === 'queued').length)
@@ -439,6 +465,7 @@ export default function Page() {
         <button onClick={() => setTab('cut')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='cut' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Cut</button>
         <button onClick={() => setTab('upscale')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='upscale' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Upscale</button>
         <button onClick={() => setTab('downloads')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='downloads' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Downloads</button>
+        <button onClick={() => setTab('clips')} style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #223046', background: tab==='clips' ? '#162033' : 'transparent', color: '#e6eaf2' }}>Clips</button>
       </div>
 
       {tab === 'cut' && (
@@ -549,21 +576,77 @@ export default function Page() {
           </tbody>
         </table>
       </section>
-      )}
 
-      {tab === 'upscale' && (
+      {tab === 'downloads' && (
         <UpscaleSection />
       )}
 
-      {tab === 'downloads' && (
-        <section style={{ background: '#0f1624', border: '1px solid #223046', borderRadius: 12, padding: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ marginTop: 0 }}>История скачиваний</h2>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={refresh} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', background: '#162033', color: '#e6eaf2' }}>Обновить</button>
+      {tab === 'clips' && (
+        <section style={{ background: '#0f1624', border: '1px solid #223046', borderRadius: 12, padding: 16, marginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h2 style={{ margin: 0 }}>Clips</h2>
+          </div>
+          
+          {/* Filters */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <label>Search by title:
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search clips..."
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #223046', background: '#0f1624', color: '#e6eaf2' }}
+                />
+              </label>
+            </div>
+            
+            <div>
+              <label>Status:
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #223046', background: '#0f1624', color: '#e6eaf2' }}
+                >
+                  <option value="all">All</option>
+                  <option value="published">Published</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+            </div>
+            
+            <div>
+              <label>Channel:
+                <select
+                  value={channelFilter}
+                  onChange={(e) => setChannelFilter(e.target.value)}
+                  style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #223046', background: '#0f1624', color: '#e6eaf2' }}
+                >
+                  <option value="all">All</option>
+                  <option value="1">Channel 1</option>
+                  <option value="2">Channel 2</option>
+                  <option value="3">Channel 3</option>
+                  <option value="4">Channel 4</option>
+                </select>
+              </label>
             </div>
           </div>
-          <table>
+          
+          {/* Clips Table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #223046' }}>
+                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>ID</th>
+                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Title</th>
+                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Status</th>
+                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Channel</th>
+                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Duration</th>
+                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Created</th>
+                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
             <thead>
               <tr>
                 <th>ID</th>
