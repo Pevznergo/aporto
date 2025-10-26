@@ -30,10 +30,10 @@ for _dir in ("videos", "clips", "clips_upscaled", "cuted"):
     os.makedirs(os.path.join(BASE_DIR, _dir), exist_ok=True)
 
 # CORS for Next.js frontend
-origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://74.208.193.3:3000,https://studio.aporto.tech").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in origins if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
