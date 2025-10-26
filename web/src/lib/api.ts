@@ -66,31 +66,67 @@ export async function listTasks(): Promise<Task[]> {
 }
 
 export async function createTask(payload: { url: string; mode?: 'simple' | 'auto'; start?: string | number | null; end?: string | number | null }): Promise<Task> {
-  const res = await fetch(`${API_BASE}/api/tasks`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) throw new Error('Failed to create task')
-  return res.json()
+  try {
+    console.log('createTask: API_BASE =', API_BASE)
+    console.log('createTask: Payload =', payload)
+    const res = await fetch(`${API_BASE}/api/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      mode: 'cors',
+    })
+    console.log('createTask: Response status =', res.status)
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      console.error('createTask: Error body =', text)
+      throw new Error(`Failed to create task: HTTP ${res.status}`)
+    }
+    const data = await res.json()
+    console.log('createTask: Success, id =', data?.id)
+    return data
+  } catch (e) {
+    console.error('createTask: Error =', e)
+    throw e
+  }
 }
 
 export async function deleteTask(id: number): Promise<{ ok: boolean }> {
-  const res = await fetch(`${API_BASE}/api/tasks/${id}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error('Failed to delete task')
-  return res.json()
+  try {
+    console.log('deleteTask: API_BASE =', API_BASE, 'id =', id)
+    const res = await fetch(`${API_BASE}/api/tasks/${id}`, { method: 'DELETE', mode: 'cors' })
+    console.log('deleteTask: Response status =', res.status)
+    if (!res.ok) throw new Error(`Failed to delete task: HTTP ${res.status}`)
+    return res.json()
+  } catch (e) {
+    console.error('deleteTask: Error =', e)
+    throw e
+  }
 }
 
 export async function clearTasks(): Promise<{ ok: boolean }> {
-  const res = await fetch(`${API_BASE}/api/tasks`, { method: 'DELETE' })
-  if (!res.ok) throw new Error('Failed to clear tasks')
-  return res.json()
+  try {
+    console.log('clearTasks: API_BASE =', API_BASE)
+    const res = await fetch(`${API_BASE}/api/tasks`, { method: 'DELETE', mode: 'cors' })
+    console.log('clearTasks: Response status =', res.status)
+    if (!res.ok) throw new Error(`Failed to clear tasks: HTTP ${res.status}`)
+    return res.json()
+  } catch (e) {
+    console.error('clearTasks: Error =', e)
+    throw e
+  }
 }
 
 export async function retryTask(id: number): Promise<Task> {
-  const res = await fetch(`${API_BASE}/api/tasks/${id}/retry`, { method: 'POST' })
-  if (!res.ok) throw new Error('Failed to retry task')
-  return res.json()
+  try {
+    console.log('retryTask: API_BASE =', API_BASE, 'id =', id)
+    const res = await fetch(`${API_BASE}/api/tasks/${id}/retry`, { method: 'POST', mode: 'cors' })
+    console.log('retryTask: Response status =', res.status)
+    if (!res.ok) throw new Error(`Failed to retry task: HTTP ${res.status}`)
+    return res.json()
+  } catch (e) {
+    console.error('retryTask: Error =', e)
+    throw e
+  }
 }
 
 export async function listDownloads(): Promise<DownloadedItem[]> {
@@ -117,22 +153,26 @@ export async function deleteDownload(id: number): Promise<{ ok: boolean }> {
 
 export async function getTaskClips(taskId: number): Promise<Clip[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/${taskId}/clips`, { cache: 'no-store' })
+    console.log('getTaskClips: API_BASE =', API_BASE, 'taskId =', taskId)
+    const res = await fetch(`${API_BASE}/api/tasks/${taskId}/clips`, { cache: 'no-store', mode: 'cors' })
+    console.log('getTaskClips: Response status =', res.status)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   } catch (e) {
-    console.error('Failed to fetch clips:', e)
+    console.error('getTaskClips: Error =', e)
     return []
   }
 }
 
 export async function getClip(clipId: number): Promise<Clip | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/clips/${clipId}`, { cache: 'no-store' })
+    console.log('getClip: API_BASE =', API_BASE, 'clipId =', clipId)
+    const res = await fetch(`${API_BASE}/api/clips/${clipId}`, { cache: 'no-store', mode: 'cors' })
+    console.log('getClip: Response status =', res.status)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   } catch (e) {
-    console.error('Failed to fetch clip:', e)
+    console.error('getClip: Error =', e)
     return null
   }
 }
