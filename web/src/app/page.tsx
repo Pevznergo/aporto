@@ -3,7 +3,7 @@
 import React from 'react'
 /// <reference types="react" />
 import { useEffect, useState } from 'react'
-import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, type Task, type DownloadedItem } from '@/lib/api'
+import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, type Task, type DownloadedItem, type Clip } from '@/lib/api'
 import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, listUpscaleTasks, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
@@ -31,7 +31,7 @@ function StageChip({ stage }: { stage?: string | null }) {
 }
 
 function ClipsModal({ task, onClose }: { task: Task; onClose: () => void }) {
-  const [clips, setClips] = useState<ClipItem[]>([])
+  const [clips, setClips] = useState<Clip[]>([])
   const [loading, setLoading] = useState(true)
   
   useEffect(() => {
@@ -215,18 +215,6 @@ function VideosLinks({ t, onShowClips }: { t: Task; onShowClips: () => void }) {
 
 type Tab = 'cut' | 'upscale' | 'downloads' | 'clips'
 
-interface ClipItem {
-  id: number
-  task_id: number
-  video_path: string
-  status: 'pending' | 'published' | 'cancelled'
-  channel: number
-  created_at: string
-  updated_at: string
-  title?: string
-  duration?: number
-}
-
 function UpscaleSection() {
   const { tasks, refresh } = useUpscaleTasks()
   const [showSettings, setShowSettings] = useState(false)
@@ -364,7 +352,7 @@ export default function Page() {
   const [upQueued, setUpQueued] = useState(0)
   const [upProcessing, setUpProcessing] = useState(0)
   const [selectedTaskForClips, setSelectedTaskForClips] = useState<Task | null>(null)
-  const [clips, setClips] = useState<ClipItem[]>([])
+  const [clips, setClips] = useState<Clip[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [channelFilter, setChannelFilter] = useState<string>('all')
@@ -377,7 +365,8 @@ export default function Page() {
     
     if (tab === 'clips') {
       try {
-        const clipsData = await fetch('/api/clips').then(res => res.json())
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+        const clipsData = await fetch(`${API_BASE}/api/clips`).then(res => res.json())
         setClips(clipsData)
       } catch (e) {
         console.error('Failed to fetch clips:', e)
@@ -576,6 +565,7 @@ export default function Page() {
           </tbody>
         </table>
       </section>
+      )}
 
       {tab === 'upscale' && (
         <UpscaleSection />
