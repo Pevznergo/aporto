@@ -577,76 +577,16 @@ export default function Page() {
         </table>
       </section>
 
-      {tab === 'downloads' && (
+      {tab === 'upscale' && (
         <UpscaleSection />
       )}
 
-      {tab === 'clips' && (
+      {tab === 'downloads' && (
         <section style={{ background: '#0f1624', border: '1px solid #223046', borderRadius: 12, padding: 16, marginTop: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 style={{ margin: 0 }}>Clips</h2>
+            <h2 style={{ margin: 0 }}>Downloads</h2>
           </div>
-          
-          {/* Filters */}
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <label>Search by title:
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search clips..."
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #223046', background: '#0f1624', color: '#e6eaf2' }}
-                />
-              </label>
-            </div>
-            
-            <div>
-              <label>Status:
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #223046', background: '#0f1624', color: '#e6eaf2' }}
-                >
-                  <option value="all">All</option>
-                  <option value="published">Published</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </label>
-            </div>
-            
-            <div>
-              <label>Channel:
-                <select
-                  value={channelFilter}
-                  onChange={(e) => setChannelFilter(e.target.value)}
-                  style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #223046', background: '#0f1624', color: '#e6eaf2' }}
-                >
-                  <option value="all">All</option>
-                  <option value="1">Channel 1</option>
-                  <option value="2">Channel 2</option>
-                  <option value="3">Channel 3</option>
-                  <option value="4">Channel 4</option>
-                </select>
-              </label>
-            </div>
-          </div>
-          
-          {/* Clips Table */}
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #223046' }}>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>ID</th>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Title</th>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Status</th>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Channel</th>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Duration</th>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Created</th>
-                  <th style={{ textAlign: 'left', padding: '12px', color: '#9ca3af' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
+          <table>
             <thead>
               <tr>
                 <th>ID</th>
@@ -679,6 +619,42 @@ export default function Page() {
               ))}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {tab === 'clips' && (
+        <section style={{ background: '#0f1624', border: '1px solid #223046', borderRadius: 12, padding: 16, marginTop: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h2 style={{ margin: 0 }}>Clips</h2>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Task</th>
+                  <th>Short #</th>
+                  <th>Title</th>
+                  <th>Description</th>
+                  <th>File</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clips.map((clip) => (
+                  <tr key={clip.id}>
+                    <td>{clip.id}</td>
+                    <td>{clip.task_id}</td>
+                    <td>{clip.short_id}</td>
+                    <td>{clip.title}</td>
+                    <td style={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.description}</td>
+                    <td>{clip.file_path ? <a href={`/clips/${clip.file_path.split('/').pop()}`} target="_blank">скачать</a> : '-'}</td>
+                    <td>{new Date(clip.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
       

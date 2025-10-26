@@ -404,3 +404,24 @@ def api_upscale_ensure():
     except Exception as e:
         # Return a clear error instead of hanging/empty reply
         raise HTTPException(status_code=502, detail=f"Failed to ensure instance running: {e}")
+
+
+# Clips list API for frontend Clips tab
+@app.get("/api/clips")
+def api_list_clips(session: Session = Depends(get_session)):
+    clips = session.exec(select(Clip).order_by(Clip.id.desc())).all()
+    result = []
+    for c in clips:
+        result.append({
+            "id": c.id,
+            "task_id": c.task_id,
+            "short_id": c.short_id,
+            "title": c.title,
+            "description": c.description,
+            "duration_estimate": c.duration_estimate,
+            "hook_strength": c.hook_strength,
+            "why_it_works": c.why_it_works,
+            "file_path": c.file_path,
+            "created_at": c.created_at.isoformat(),
+        })
+    return result
