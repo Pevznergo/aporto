@@ -358,39 +358,80 @@ export default function Page() {
   const [channelFilter, setChannelFilter] = useState<string>('all')
 
   async function refresh() {
-    const data = await listTasks()
-    setTasks(data)
-    const d = await listDownloads()
-    setDownloads(d)
-    
-    if (tab === 'clips') {
-      try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || ''
-        const clipsData = await fetch(`${API_BASE}/api/clips`).then(res => res.json())
-        setClips(clipsData)
-      } catch (e) {
-        console.error('Failed to fetch clips:', e)
-      }
-    }
+    console.log('=== Starting refresh ===')
+    console.log('Current tab:', tab)
+    console.log('API Base URL:', process.env.NEXT_PUBLIC_API_BASE_URL)
+
     try {
-      const ups = await listUpscaleTasks()
-      setUpQueued(ups.filter(u => (u.status || '').toLowerCase() === 'queued').length)
-      setUpProcessing(ups.filter(u => (u.status || '').toLowerCase() === 'processing').length)
-    } catch {}
-    const cq = data.filter(t => {
-      const s = (t.status || '').toLowerCase()
-      return s === 'queued_download' || s === 'queued_process'
-    }).length
-    const cp = data.filter(t => (t.status || '').toLowerCase() === 'processing').length
-    setCutQueued(cq)
-    setCutProcessing(cp)
+      console.log('Fetching tasks...')
+      const data = await listTasks()
+      console.log('Tasks fetched:', data.length)
+      setTasks(data)
+
+      console.log('Fetching downloads...')
+      const d = await listDownloads()
+      console.log('Downloads fetched:', d.length)
+      setDownloads(d)
+
+      if (tab === 'clips') {
+        try {
+          const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+          console.log('Fetching clips from:', `${API_BASE}/api/clips`)
+          const response = await fetch(`${API_BASE}/api/clips`, { cache: 'no-store', mode: 'cors' })
+          console.log('Clips response status:', response.status)
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+          const clipsData = await response.json()
+          console.log('Clips fetched:', clipsData.length)
+          setClips(clipsData)
+        } catch (clipsError) {
+          console.error('Error fetching clips:', clipsError)
+        }
+      }
+
+      try {
+        console.log('Fetching upscale tasks...')
+        const ups = await listUpscaleTasks()
+        const queued = ups.filter(u => (u.status || '').toLowerCase() === 'queued').length
+        const processing = ups.filter(u => (u.status || '').toLowerCase() === 'processing').length
+        console.log(`Upscale tasks - Queued: ${queued}, Processing: ${processing}`)
+        setUpQueued(queued)
+        setUpProcessing(processing)
+      } catch (upscaleError) {
+        console.error('Error fetching upscale tasks:', upscaleError)
+      }
+
+      const cq = data.filter(t => {
+        const s = (t.status || '').toLowerCase()
+        return s === 'queued_download' || s === 'queued_process'
+      }).length
+
+      const cp = data.filter(t => (t.status || '').toLowerCase() === 'processing').length
+      console.log(`Tasks - Queued: ${cq}, Processing: ${cp}`)
+
+      setCutQueued(cq)
+      setCutProcessing(cp)
+
+    } catch (error) {
+      console.error('Error in refresh:', error)
+    } finally {
+      console.log('=== Refresh completed ===')
+    }
   }
 
   useEffect(() => {
+    console.log('Component mounted, starting refresh interval...')
     refresh()
-    const id = setInterval(refresh, 3000)
-    return () => clearInterval(id)
-  }, [])
+    const id = setInterval(() => {
+      console.log('Auto-refreshing...')
+      refresh()
+    }, 3000)
+    return () => {
+      console.log('Component unmounting, cleaning up...')
+      clearInterval(id)
+    }
+  }, [tab])
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()

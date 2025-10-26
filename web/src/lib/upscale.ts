@@ -14,10 +14,16 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || ''
 
 export async function listUpscaleTasks(): Promise<UpscaleTask[]> {
   try {
+    console.log('listUpscaleTasks: API_BASE =', API_BASE)
+    console.log('listUpscaleTasks: Making request to', `${API_BASE}/api/upscale/tasks`)
     const res = await fetch(`${API_BASE}/api/upscale/tasks`, { cache: 'no-store', mode: 'cors' })
+    console.log('listUpscaleTasks: Response status =', res.status)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
+    const data = await res.json()
+    console.log('listUpscaleTasks: Success, returned', data.length, 'upscale tasks')
+    return data
   } catch (e) {
+    console.error('listUpscaleTasks: Error =', e)
     // Swallow network errors so UI remains usable
     return []
   }

@@ -51,10 +51,16 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || ''
 
 export async function listTasks(): Promise<Task[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/tasks`, { cache: 'no-store' })
+    console.log('listTasks: API_BASE =', API_BASE)
+    console.log('listTasks: Making request to', `${API_BASE}/api/tasks`)
+    const res = await fetch(`${API_BASE}/api/tasks`, { cache: 'no-store', mode: 'cors' })
+    console.log('listTasks: Response status =', res.status)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
+    const data = await res.json()
+    console.log('listTasks: Success, returned', data.length, 'tasks')
+    return data
   } catch (e) {
+    console.error('listTasks: Error =', e)
     return []
   }
 }
@@ -89,10 +95,16 @@ export async function retryTask(id: number): Promise<Task> {
 
 export async function listDownloads(): Promise<DownloadedItem[]> {
   try {
-    const res = await fetch(`${API_BASE}/api/downloads`, { cache: 'no-store' })
+    console.log('listDownloads: API_BASE =', API_BASE)
+    console.log('listDownloads: Making request to', `${API_BASE}/api/downloads`)
+    const res = await fetch(`${API_BASE}/api/downloads`, { cache: 'no-store', mode: 'cors' })
+    console.log('listDownloads: Response status =', res.status)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return res.json()
+    const data = await res.json()
+    console.log('listDownloads: Success, returned', data.length, 'downloads')
+    return data
   } catch (e) {
+    console.error('listDownloads: Error =', e)
     return []
   }
 }
