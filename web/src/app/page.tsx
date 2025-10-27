@@ -399,6 +399,8 @@ export default function Page() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string[]>(['all'])
   const [channelFilter, setChannelFilter] = useState<string[]>(['all'])
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
+  const [channelDropdownOpen, setChannelDropdownOpen] = useState(false)
 
   async function refresh() {
     console.log('=== Starting refresh ===')
@@ -718,67 +720,177 @@ export default function Page() {
                 }}
               />
             </div>
-            <div style={{ flex: '0 1 250px' }}>
+            <div style={{ flex: '0 1 220px', position: 'relative' }}>
               <label style={{ display: 'block', fontSize: 12, marginBottom: 8, opacity: 0.8 }}>Статус</label>
-              <div style={{ 
-                padding: '8px', 
-                borderRadius: 8, 
-                border: '1px solid #223046', 
-                background: '#162033',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 6
-              }}>
-                {['Empty', 'Published', 'Cancelled'].map(status => (
-                  <label key={status} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
-                    <input
-                      type="checkbox"
-                      checked={statusFilter.includes(status)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setStatusFilter([...statusFilter.filter(f => f !== 'all'), status])
-                        } else {
-                          const newFilters = statusFilter.filter(f => f !== status)
-                          setStatusFilter(newFilters.length === 0 ? ['all'] : newFilters)
-                        }
+              <button
+                onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  border: '1px solid #223046',
+                  background: statusDropdownOpen ? '#1e293b' : '#162033',
+                  color: '#e6eaf2',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: 13,
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span>
+                  {statusFilter.includes('all') || statusFilter.length === 0
+                    ? 'Все статусы'
+                    : statusFilter.length === 1
+                    ? statusFilter[0]
+                    : `${statusFilter.length} выбрано`}
+                </span>
+                <span style={{ transform: statusDropdownOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+              {statusDropdownOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    marginTop: 4,
+                    background: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: 8,
+                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3)',
+                    zIndex: 50,
+                    maxHeight: 240,
+                    overflowY: 'auto'
+                  }}
+                >
+                  {['Empty', 'Published', 'Processing', 'Cancelled'].map(status => (
+                    <label
+                      key={status}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '10px 12px',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        transition: 'background 0.15s',
+                        background: statusFilter.includes(status) ? '#334155' : 'transparent'
                       }}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <span style={{ color: '#e6eaf2' }}>{status}</span>
-                  </label>
-                ))}
-              </div>
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#334155')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = statusFilter.includes(status) ? '#334155' : 'transparent')}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={statusFilter.includes(status)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setStatusFilter([...statusFilter.filter(f => f !== 'all'), status])
+                          } else {
+                            const newFilters = statusFilter.filter(f => f !== status)
+                            setStatusFilter(newFilters.length === 0 ? ['all'] : newFilters)
+                          }
+                        }}
+                        style={{ 
+                          cursor: 'pointer',
+                          width: 16,
+                          height: 16,
+                          accentColor: '#3b82f6'
+                        }}
+                      />
+                      <span style={{ color: '#e6eaf2', flex: 1 }}>{status}</span>
+                      {statusFilter.includes(status) && <span style={{ color: '#3b82f6' }}>✓</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
-            <div style={{ flex: '0 1 250px' }}>
+            <div style={{ flex: '0 1 220px', position: 'relative' }}>
               <label style={{ display: 'block', fontSize: 12, marginBottom: 8, opacity: 0.8 }}>Канал</label>
-              <div style={{ 
-                padding: '8px', 
-                borderRadius: 8, 
-                border: '1px solid #223046', 
-                background: '#162033',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 6
-              }}>
-                {['Empty', '1', '2', '3', '4'].map(channel => (
-                  <label key={channel} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
-                    <input
-                      type="checkbox"
-                      checked={channelFilter.includes(channel)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setChannelFilter([...channelFilter.filter(f => f !== 'all'), channel])
-                        } else {
-                          const newFilters = channelFilter.filter(f => f !== channel)
-                          setChannelFilter(newFilters.length === 0 ? ['all'] : newFilters)
-                        }
+              <button
+                onClick={() => setChannelDropdownOpen(!channelDropdownOpen)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  border: '1px solid #223046',
+                  background: channelDropdownOpen ? '#1e293b' : '#162033',
+                  color: '#e6eaf2',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: 13,
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span>
+                  {channelFilter.includes('all') || channelFilter.length === 0
+                    ? 'Все каналы'
+                    : channelFilter.length === 1
+                    ? channelFilter[0]
+                    : `${channelFilter.length} выбрано`}
+                </span>
+                <span style={{ transform: channelDropdownOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>▼</span>
+              </button>
+              {channelDropdownOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    marginTop: 4,
+                    background: '#1e293b',
+                    border: '1px solid #334155',
+                    borderRadius: 8,
+                    boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3)',
+                    zIndex: 50,
+                    maxHeight: 240,
+                    overflowY: 'auto'
+                  }}
+                >
+                  {['Empty', 'Go Cast', 'Star LOL', 'True Talk', 'Deep Cut'].map(channel => (
+                    <label
+                      key={channel}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '10px 12px',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        transition: 'background 0.15s',
+                        background: channelFilter.includes(channel) ? '#334155' : 'transparent'
                       }}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <span style={{ color: '#e6eaf2' }}>{channel}</span>
-                  </label>
-                ))}
-              </div>
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#334155')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = channelFilter.includes(channel) ? '#334155' : 'transparent')}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={channelFilter.includes(channel)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setChannelFilter([...channelFilter.filter(f => f !== 'all'), channel])
+                          } else {
+                            const newFilters = channelFilter.filter(f => f !== channel)
+                            setChannelFilter(newFilters.length === 0 ? ['all'] : newFilters)
+                          }
+                        }}
+                        style={{ 
+                          cursor: 'pointer',
+                          width: 16,
+                          height: 16,
+                          accentColor: '#3b82f6'
+                        }}
+                      />
+                      <span style={{ color: '#e6eaf2', flex: 1 }}>{channel}</span>
+                      {channelFilter.includes(channel) && <span style={{ color: '#3b82f6' }}>✓</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -917,6 +1029,7 @@ export default function Page() {
                         >
                           <option value="">-</option>
                           <option value="Published">Published</option>
+                          <option value="Processing">Processing</option>
                           <option value="Cancelled">Cancelled</option>
                         </select>
                       </td>
@@ -946,10 +1059,10 @@ export default function Page() {
                           }}
                         >
                           <option value="">-</option>
-                          <option value="1">1</option>
-                          <option value="2">2</option>
-                          <option value="3">3</option>
-                          <option value="4">4</option>
+                          <option value="Go Cast">Go Cast</option>
+                          <option value="Star LOL">Star LOL</option>
+                          <option value="True Talk">True Talk</option>
+                          <option value="Deep Cut">Deep Cut</option>
                         </select>
                       </td>
                       <td>{clip.file_path ? <a href={`/clips/${clip.file_path.split('/').pop()}`} target="_blank">скачать</a> : '-'}</td>
