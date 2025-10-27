@@ -11,6 +11,7 @@ This application provides video upscaling using the realesr-general-x4v3 model w
 - SSH-based file transfer for input/output videos
 - REST API for remote job submission
 - Docker support for easy deployment
+- **Automatic compatibility fixes** - torchvision compatibility is handled automatically on every deployment
 
 ## Quick Start
 
@@ -68,6 +69,8 @@ This application is designed for deployment on Vast.ai GPU instances:
 - [Vast.ai Deployment Guide](VASTAI_DEPLOYMENT.md)
 - [Vast.ai API Usage](VASTAI_API_GUIDE.md)
 - [Deployment Examples](DEPLOYMENT_EXAMPLE.md)
+- [BasicSR Compatibility Fix](BASICSR_FIX.md) - Detailed explanation of automatic fixes
+- [Quick Fix Reference](QUICK_FIX.md) - Quick troubleshooting guide
 
 ## Requirements
 

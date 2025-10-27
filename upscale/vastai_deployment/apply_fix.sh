@@ -9,26 +9,10 @@ cd /workspace/aporto
 echo "🔧 Applying complete fix..."
 echo ""
 
-# 1. Patch basicsr
+# 1. Patch basicsr using the auto-fix script
 echo "Step 1: Patching basicsr..."
-DEGRADATIONS=$(find /workspace/aporto/.venv -name "degradations.py" -path "*/basicsr/data/degradations.py" 2>/dev/null | head -n1)
-
-if [ -z "$DEGRADATIONS" ]; then
-    echo "❌ Error: Could not find basicsr degradations.py"
-    echo "Is the venv activated and basicsr installed?"
-    exit 1
-fi
-
-echo "Found: $DEGRADATIONS"
-
-if grep -q "from torchvision.transforms.functional_tensor import rgb_to_grayscale" "$DEGRADATIONS"; then
-    echo "Applying patch..."
-    cp "$DEGRADATIONS" "${DEGRADATIONS}.bak"
-    sed -i 's/from torchvision\.transforms\.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' "$DEGRADATIONS"
-    echo "✅ Patched"
-else
-    echo "✅ Already patched"
-fi
+chmod +x /workspace/aporto/upscale/vastai_deployment/auto_fix_basicsr.sh
+/workspace/aporto/upscale/vastai_deployment/auto_fix_basicsr.sh
 echo ""
 
 # 2. Ensure VENV_PYTHON is in .env

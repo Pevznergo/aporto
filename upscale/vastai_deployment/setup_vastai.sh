@@ -15,6 +15,11 @@ pip3 install --upgrade pip
 # Install Python dependencies
 pip3 install -r requirements.txt
 
+# Apply basicsr compatibility fix using the auto-fix script
+echo "🩹 Applying basicsr compatibility fix..."
+chmod +x auto_fix_basicsr.sh
+./auto_fix_basicsr.sh
+
 # Download Real-ESRGAN models
 echo "Downloading Real-ESRGAN models..."
 mkdir -p models
