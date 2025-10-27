@@ -5,12 +5,17 @@ Run this once to update the database schema.
 """
 import os
 import sys
-from sqlalchemy import text
 
 # Add parent directory to path to import app modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.db import engine
+
+# Import text from sqlalchemy (available through SQLModel's dependencies)
+try:
+    from sqlmodel import text
+except ImportError:
+    from sqlalchemy import text
 
 def migrate():
     print("Starting migration: add status and channel to clip table...")
