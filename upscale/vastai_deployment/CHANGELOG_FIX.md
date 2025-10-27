@@ -2,11 +2,19 @@
 
 ## Date: October 27, 2025
 
-## Problem Solved
+## Problems Solved
+
+### Problem 1: Torchvision Compatibility
 
 **Error:** `Failed to import RealESRGANer from realesrgan.utils: No module named 'torchvision.transforms.functional_tensor'`
 
 **Root Cause:** The `basicsr` library (dependency of Real-ESRGAN) uses a deprecated import from torchvision that was removed in version 0.19+.
+
+### Problem 2: Distutils Package Conflicts
+
+**Error:** `Cannot uninstall blinker 1.4. It is a distutils installed project and thus we cannot accurately determine which files belong to it`
+
+**Root Cause:** System packages installed via distutils (like `blinker`, `PyYAML`, etc.) cannot be safely uninstalled by pip, causing installation failures when pip tries to upgrade them.
 
 ## Solution Overview
 
@@ -25,6 +33,15 @@ Implemented a comprehensive, automatic fix that ensures the basicsr compatibilit
   - Verifies fix after application
   - Works with both venv and system-wide installations
 - Located at: `/Users/igortkachenko/Downloads/aporto/upscale/vastai_deployment/auto_fix_basicsr.sh`
+
+#### `fix_distutils_packages.sh` ⭐ (Distutils Fix Script)
+- Detects and handles distutils-installed packages
+- Features:
+  - Identifies problematic system packages (blinker, PyYAML, etc.)
+  - Creates a flag file for pip to use `--ignore-installed`
+  - Prevents installation failures due to distutils conflicts
+  - Safe and non-destructive
+- Located at: `/Users/igortkachenko/Downloads/aporto/upscale/vastai_deployment/fix_distutils_packages.sh`
 
 #### `BASICSR_FIX.md`
 - Comprehensive documentation of the fix
@@ -284,8 +301,9 @@ This ensures the file is found regardless of installation method.
 
 ## Files Summary
 
-### Created (5 files)
-- `auto_fix_basicsr.sh` - Main fix script
+### Created (6 files)
+- `auto_fix_basicsr.sh` - Main basicsr compatibility fix script
+- `fix_distutils_packages.sh` - Distutils package conflict handler
 - `BASICSR_FIX.md` - Detailed documentation
 - `QUICK_FIX.md` - Quick reference
 - `DEPLOYMENT_CHECKLIST.md` - Deployment guide
@@ -293,15 +311,16 @@ This ensures the file is found regardless of installation method.
 
 ### Modified (5 files)
 - `start.sh` - Added automatic fix on startup
-- `install.sh` - Uses centralized fix script
-- `setup_vastai.sh` - Uses centralized fix script
+- `install.sh` - Uses centralized fix scripts + distutils handling
+- `setup_vastai.sh` - Uses centralized fix scripts + distutils handling
 - `apply_fix.sh` - Uses centralized fix script
 - `README.md` - Added fix documentation links
 
 ### Total Changes
-- 10 files affected
-- ~500 lines of new code and documentation
+- 11 files affected
+- ~600 lines of new code and documentation
 - 100% automated fix application
+- Handles both torchvision and distutils issues
 
 ## Conclusion
 

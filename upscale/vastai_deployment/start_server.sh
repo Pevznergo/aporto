@@ -3,19 +3,36 @@
 # Startup script for video upscaling server
 echo "Starting Video Upscaling Server..."
 
-# Change to app directory
-cd /app
+# Change to workspace directory
+cd /workspace/aporto
 
-# Install any missing dependencies
-pip install -r requirements.txt
+# Activate virtual environment
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+    echo "✅ Virtual environment activated"
+else
+    echo "⚠️  No virtual environment found, using system Python"
+fi
 
-# Download models if not present
-if [ ! -f "models/realesr-general-x4v3.pth" ]; then
-    echo "Downloading Real-ESRGAN model..."
-    mkdir -p models
-    wget -O models/realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
+# Load environment variables
+if [ -f ".env" ]; then
+    export $(grep -v '^#' .env | xargs)
+    echo "✅ Environment variables loaded"
+fi
+
+# Verify models exist
+if [ ! -f "upscale/models/realesr-general-x4v3.pth" ]; then
+    echo "❌ Real-ESRGAN model not found at upscale/models/realesr-general-x4v3.pth"
+    echo "   Please run install.sh first"
+    exit 1
+fi
+
+if [ ! -f "upscale/models/GFPGANv1.4.pth" ]; then
+    echo "❌ GFPGAN model not found at upscale/models/GFPGANv1.4.pth"
+    echo "   Please run install.sh first"
+    exit 1
 fi
 
 # Start the server
-echo "Server starting on port 5000..."
-python server.py
+echo "🚀 Starting server on port 5000..."
+python3 upscale/vastai_deployment/server.py

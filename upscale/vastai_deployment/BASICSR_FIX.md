@@ -181,6 +181,24 @@ We could downgrade torchvision to < 0.19, but:
 - The patch is simple and reliable
 - It's better to fix the actual issue than work around it
 
+## Related Issue: Distutils Package Conflicts
+
+During installation, you may encounter errors with system-installed packages like `blinker`, `PyYAML`, etc.:
+
+```
+Cannot uninstall blinker 1.4
+It is a distutils installed project and thus we cannot accurately determine which files belong to it
+```
+
+### Solution
+
+This is also automatically handled by our installation scripts using the `fix_distutils_packages.sh` script, which:
+1. Detects system-installed packages that may conflict
+2. Adds `--ignore-installed` flag to pip when needed
+3. Ensures packages install into the venv without conflicts
+
+No manual intervention required - the scripts handle this automatically.
+
 ## Future Considerations
 
 This fix may not be needed if:

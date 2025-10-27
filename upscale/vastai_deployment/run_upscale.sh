@@ -14,6 +14,11 @@ SSH_HOST=$2
 REMOTE_INPUT_PATH=$3
 REMOTE_OUTPUT_PATH=$4
 
+# Activate virtual environment if it exists
+if [ -f "/workspace/aporto/.venv/bin/activate" ]; then
+    source /workspace/aporto/.venv/bin/activate
+fi
+
 echo "Starting video upscaling process..."
 echo "SSH User: $SSH_USER"
 echo "SSH Host: $SSH_HOST"
@@ -21,7 +26,7 @@ echo "Remote Input: $REMOTE_INPUT_PATH"
 echo "Remote Output: $REMOTE_OUTPUT_PATH"
 
 # Run the upscaling application
-python upscale_app.py "$SSH_USER" "$SSH_HOST" "$REMOTE_INPUT_PATH" "$REMOTE_OUTPUT_PATH"
+python3 upscale_app.py "$SSH_USER" "$SSH_HOST" "$REMOTE_INPUT_PATH" "$REMOTE_OUTPUT_PATH"
 
 if [ $? -eq 0 ]; then
     echo "Video upscaling completed successfully!"

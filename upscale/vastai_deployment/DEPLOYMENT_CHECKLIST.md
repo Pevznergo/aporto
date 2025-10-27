@@ -95,6 +95,32 @@ cd /workspace/aporto/upscale/vastai_deployment
 systemctl restart vast-upscale.service
 ```
 
+### Issue: "Cannot uninstall blinker 1.4"
+
+**Solution:**
+```bash
+source /workspace/aporto/.venv/bin/activate
+pip install --ignore-installed -r upscale/vastai_deployment/requirements.txt
+```
+
+### Issue: "python: command not found"
+
+**Solution:** Scripts now use `python3`. Update to latest scripts:
+```bash
+cd /workspace/aporto
+git pull
+chmod +x upscale/vastai_deployment/*.sh
+```
+
+### Issue: "cd: /app: No such file"
+
+**Solution:** `start_server.sh` was using wrong path. Update to latest version:
+```bash
+cd /workspace/aporto
+git pull
+chmod +x upscale/vastai_deployment/start_server.sh
+```
+
 ### Issue: Service fails to start
 
 **Check logs:**

@@ -8,9 +8,13 @@ pkill -f 'python.*server.py' || true
 sleep 2
 
 echo "Loading environment from .env..."
-set -a
-source .env
-set +a
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+else
+    echo "⚠️  No .env file found"
+fi
 
 echo "Environment loaded:"
 echo "  VENV_PYTHON=$VENV_PYTHON"
