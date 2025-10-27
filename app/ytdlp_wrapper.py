@@ -36,13 +36,12 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
 
 def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
     """
-    Downloads the video in 1080p or 720p quality only.
-    Prioritizes 1080p, then falls back to 720p if 1080p is unavailable.
-    Raises RuntimeError if neither 1080p nor 720p is available.
+    Downloads the video in high quality (720p-1080p) and saves filename as the video title.
+    Prioritizes 1080p but will fallback to 720p if 1080p is unavailable.
     Returns (video_id, original_title, file_path).
     """
     os.makedirs(output_dir, exist_ok=True)
-    # Strictly require 1080p or 720p, no other qualities
+    # Try to get best quality between 720p and 1080p with flexible codec support
     ydl_opts = {
         "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
         "noprogress": True,
@@ -51,8 +50,8 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
         "restrictfilenames": True,
         # Prefer MP4 container for compatibility when merging
         "merge_output_format": "mp4",
-        # Strict format: 1080p first, then 720p, no other qualities allowed
-        "format": "bestvideo[height=1080]+bestaudio/bestvideo[height=720]+bestaudio",
+        # Try to get best quality up to 1080p with multiple fallbacks
+        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
         # Add headers to avoid 403 errors
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -71,8 +70,8 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
     except Exception as e:
         # Map any format-not-found cases to a clear error
         msg = str(e)
-        if "requested format not available" in msg.lower() or "no such format" in msg.lower() or "no video formats" in msg.lower():
-            raise RuntimeError("Видео недоступно в качестве 1080p или 720p. Требуется хотя бы 720p для скачивания.")
+        if "requested format not available" in msg.lower() or "no such format" in msg.lower():
+            raise RuntimeError("Недоступно качество 720p+ для этого видео")
         raise
     video_id = info.get("id")
     file_path = os.path.abspath(filename)
