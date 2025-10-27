@@ -657,6 +657,65 @@ export default function Page() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h2 style={{ margin: 0 }}>Clips</h2>
           </div>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 300px' }}>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 4, opacity: 0.8 }}>Поиск по названию</label>
+              <input 
+                type="text" 
+                placeholder="Введите название..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ 
+                  width: '100%', 
+                  padding: '6px 10px', 
+                  borderRadius: 8, 
+                  border: '1px solid #223046', 
+                  background: '#162033', 
+                  color: '#e6eaf2' 
+                }}
+              />
+            </div>
+            <div style={{ flex: '0 1 200px' }}>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 4, opacity: 0.8 }}>Статус</label>
+              <select 
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={{ 
+                  width: '100%', 
+                  padding: '6px 10px', 
+                  borderRadius: 8, 
+                  border: '1px solid #223046', 
+                  background: '#162033', 
+                  color: '#e6eaf2' 
+                }}
+              >
+                <option value="all">Все</option>
+                <option value="Published">Published</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div style={{ flex: '0 1 200px' }}>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 4, opacity: 0.8 }}>Канал</label>
+              <select 
+                value={channelFilter}
+                onChange={(e) => setChannelFilter(e.target.value)}
+                style={{ 
+                  width: '100%', 
+                  padding: '6px 10px', 
+                  borderRadius: 8, 
+                  border: '1px solid #223046', 
+                  background: '#162033', 
+                  color: '#e6eaf2' 
+                }}
+              >
+                <option value="all">Все</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -666,22 +725,75 @@ export default function Page() {
                   <th>Short #</th>
                   <th>Title</th>
                   <th>Description</th>
+                  <th>Status</th>
+                  <th>Channel</th>
                   <th>File</th>
                   <th>Created</th>
                 </tr>
               </thead>
               <tbody>
-                {clips.map((clip) => (
-                  <tr key={clip.id}>
-                    <td>{clip.id}</td>
-                    <td>{clip.task_id}</td>
-                    <td>{clip.short_id}</td>
-                    <td>{clip.title}</td>
-                    <td style={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.description}</td>
-                    <td>{clip.file_path ? <a href={`/clips/${clip.file_path.split('/').pop()}`} target="_blank">скачать</a> : '-'}</td>
-                    <td>{new Date(clip.created_at).toLocaleString()}</td>
-                  </tr>
-                ))}
+                {clips
+                  .filter((clip) => {
+                    const matchesSearch = clip.title.toLowerCase().includes(searchTerm.toLowerCase())
+                    const matchesStatus = statusFilter === 'all' || clip.status === statusFilter
+                    const matchesChannel = channelFilter === 'all' || clip.channel === channelFilter
+                    return matchesSearch && matchesStatus && matchesChannel
+                  })
+                  .map((clip) => (
+                    <tr key={clip.id}>
+                      <td>{clip.id}</td>
+                      <td>{clip.task_id}</td>
+                      <td>{clip.short_id}</td>
+                      <td>{clip.title}</td>
+                      <td style={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.description}</td>
+                      <td>
+                        <select 
+                          value={clip.status || ''}
+                          onChange={(e) => {
+                            // TODO: implement update clip status API call
+                            console.log('Update clip', clip.id, 'status to', e.target.value)
+                          }}
+                          style={{ 
+                            padding: '4px 8px', 
+                            borderRadius: 6, 
+                            border: '1px solid #223046', 
+                            background: '#162033', 
+                            color: '#e6eaf2',
+                            fontSize: 12
+                          }}
+                        >
+                          <option value="">-</option>
+                          <option value="Published">Published</option>
+                          <option value="Cancelled">Cancelled</option>
+                        </select>
+                      </td>
+                      <td>
+                        <select 
+                          value={clip.channel || ''}
+                          onChange={(e) => {
+                            // TODO: implement update clip channel API call
+                            console.log('Update clip', clip.id, 'channel to', e.target.value)
+                          }}
+                          style={{ 
+                            padding: '4px 8px', 
+                            borderRadius: 6, 
+                            border: '1px solid #223046', 
+                            background: '#162033', 
+                            color: '#e6eaf2',
+                            fontSize: 12
+                          }}
+                        >
+                          <option value="">-</option>
+                          <option value="1">1</option>
+                          <option value="2">2</option>
+                          <option value="3">3</option>
+                          <option value="4">4</option>
+                        </select>
+                      </td>
+                      <td>{clip.file_path ? <a href={`/clips/${clip.file_path.split('/').pop()}`} target="_blank">скачать</a> : '-'}</td>
+                      <td>{new Date(clip.created_at).toLocaleString()}</td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>

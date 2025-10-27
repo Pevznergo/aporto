@@ -45,6 +45,8 @@ export type Clip = {
   file_path?: string | null
   created_at: string
   fragments: ClipFragment[]
+  status?: string | null
+  channel?: string | null
 }
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
