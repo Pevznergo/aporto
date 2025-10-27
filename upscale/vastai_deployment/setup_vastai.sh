@@ -12,8 +12,17 @@ apt-get install -y python3 python3-pip git wget ffmpeg openssh-client
 # Upgrade pip
 pip3 install --upgrade pip
 
+# Check for distutils packages that may cause issues
+chmod +x fix_distutils_packages.sh
+NEEDS_IGNORE=$(./fix_distutils_packages.sh)
+
 # Install Python dependencies
-pip3 install -r requirements.txt
+if [ -f /tmp/.pip_ignore_installed ]; then
+    echo "  Using --ignore-installed for problematic packages..."
+    pip3 install --ignore-installed -r requirements.txt
+else
+    pip3 install -r requirements.txt
+fi
 
 # Apply basicsr compatibility fix using the auto-fix script
 echo "🩹 Applying basicsr compatibility fix..."

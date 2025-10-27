@@ -24,8 +24,17 @@ source .venv/bin/activate
 echo "📚 Installing Python dependencies..."
 python -m pip install --upgrade pip setuptools wheel
 
+# Check for distutils packages that may cause issues
+chmod +x upscale/vastai_deployment/fix_distutils_packages.sh
+NEEDS_IGNORE=$(upscale/vastai_deployment/fix_distutils_packages.sh)
+
 # Install requirements (assuming this script is in vastai_deployment/)
-pip install -r upscale/vastai_deployment/requirements.txt
+if [ -f /tmp/.pip_ignore_installed ]; then
+    echo "  Using --ignore-installed for problematic packages..."
+    pip install --ignore-installed -r upscale/vastai_deployment/requirements.txt
+else
+    pip install -r upscale/vastai_deployment/requirements.txt
+fi
 
 # Apply basicsr compatibility fix using the auto-fix script
 echo "🩹 Applying basicsr compatibility fix..."

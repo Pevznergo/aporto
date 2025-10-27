@@ -1,10 +1,16 @@
 # Quick Fix Reference
 
-## 🔧 Automatic Fix (Recommended)
+## 🔧 Automatic Fixes (Recommended)
 
-The basicsr compatibility fix is now **automatically applied** on every instance startup. You don't need to do anything!
+All compatibility fixes are now **automatically applied** on every instance startup:
+- ✅ BasicSR torchvision compatibility
+- ✅ Distutils package conflicts (blinker, PyYAML, etc.)
 
-## ⚡ Manual Fix (If Needed)
+You don't need to do anything!
+
+## ⚡ Manual Fixes (If Needed)
+
+### Fix 1: Torchvision Import Error
 
 If you encounter this error:
 ```
@@ -19,6 +25,25 @@ Run this single command:
 Then restart the service:
 ```bash
 systemctl restart vast-upscale.service
+```
+
+### Fix 2: Distutils Package Error
+
+If you encounter this error during pip install:
+```
+Cannot uninstall blinker 1.4
+It is a distutils installed project and thus we cannot accurately determine which files belong to it
+```
+
+**Solution:**
+This is automatically handled by the installation scripts. If running pip manually:
+```bash
+pip install --ignore-installed -r requirements.txt
+```
+
+Or run the fix script:
+```bash
+/workspace/aporto/upscale/vastai_deployment/fix_distutils_packages.sh
 ```
 
 ## ✅ Verify Fix
