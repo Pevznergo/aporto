@@ -245,14 +245,15 @@ Here is the transcript:
                     # Concatenate valid temp files
                     valid_temps = [f for f in temp_files if os.path.exists(f)]
                     if len(valid_temps) > 1:
-                        # Build concat filter
+                        # Build concat filter - all fragments from same source, so should have same resolution
+                        # Just ensure SAR consistency
                         input_args = []
-                        concat_inputs = []
+                        concat_parts = []
                         for idx, temp_file in enumerate(valid_temps):
                             input_args.extend(["-i", temp_file])
-                            concat_inputs.append(f"[{idx}:v][{idx}:a]")
+                            concat_parts.append(f"[{idx}:v][{idx}:a]")
                         
-                        filter_complex = f"{''.join(concat_inputs)}concat=n={len(valid_temps)}:v=1:a=1[outv][outa]"
+                        filter_complex = f"{''.join(concat_parts)}concat=n={len(valid_temps)}:v=1:a=1[outv][outa]"
                         
                         cmd = [
                             "ffmpeg", "-y"

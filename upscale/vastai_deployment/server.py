@@ -529,6 +529,7 @@ def _cut_clips_ffmpeg(video_path: str, clips: list, out_dir: str, clip_suffix: s
                         shutil.copy2(valid[0], out_file)
                         made.append(out_file)
                     else:
+                        # Build concat filter
                         inputs = []
                         concat = []
                         for idx, p in enumerate(valid):

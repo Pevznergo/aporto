@@ -283,14 +283,13 @@ def cut_clips(video_file: str, clips: List[Dict[str, Any]], out_dir: str):
                 if len(valid_temp_files) > 1:
                     # Build filter complex command for sequential concatenation
                     input_args = []
-                    filter_args = []
                     concat_inputs = []
                     
                     for idx, temp_file in enumerate(valid_temp_files):
                         input_args.extend(["-i", temp_file])
                         concat_inputs.append(f"[{idx}:v][{idx}:a]")
                     
-                    # Create concat filter
+                    # Create concat filter (all fragments from same source video, should have same resolution)
                     filter_complex = f"{''.join(concat_inputs)}concat=n={len(valid_temp_files)}:v=1:a=1[outv][outa]"
                     
                     cmd = [
