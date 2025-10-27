@@ -397,8 +397,8 @@ export default function Page() {
   const [selectedTaskForClips, setSelectedTaskForClips] = useState<Task | null>(null)
   const [clips, setClips] = useState<Clip[]>([])
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [channelFilter, setChannelFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string[]>(['all'])
+  const [channelFilter, setChannelFilter] = useState<string[]>(['all'])
 
   async function refresh() {
     console.log('=== Starting refresh ===')
@@ -718,45 +718,67 @@ export default function Page() {
                 }}
               />
             </div>
-            <div style={{ flex: '0 1 200px' }}>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 4, opacity: 0.8 }}>Статус</label>
-              <select 
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                style={{ 
-                  width: '100%', 
-                  padding: '6px 10px', 
-                  borderRadius: 8, 
-                  border: '1px solid #223046', 
-                  background: '#162033', 
-                  color: '#e6eaf2' 
-                }}
-              >
-                <option value="all">Все</option>
-                <option value="Published">Published</option>
-                <option value="Cancelled">Cancelled</option>
-              </select>
+            <div style={{ flex: '0 1 250px' }}>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 8, opacity: 0.8 }}>Статус</label>
+              <div style={{ 
+                padding: '8px', 
+                borderRadius: 8, 
+                border: '1px solid #223046', 
+                background: '#162033',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6
+              }}>
+                {['Empty', 'Published', 'Cancelled'].map(status => (
+                  <label key={status} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={statusFilter.includes(status)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setStatusFilter([...statusFilter.filter(f => f !== 'all'), status])
+                        } else {
+                          const newFilters = statusFilter.filter(f => f !== status)
+                          setStatusFilter(newFilters.length === 0 ? ['all'] : newFilters)
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span style={{ color: '#e6eaf2' }}>{status}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-            <div style={{ flex: '0 1 200px' }}>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 4, opacity: 0.8 }}>Канал</label>
-              <select 
-                value={channelFilter}
-                onChange={(e) => setChannelFilter(e.target.value)}
-                style={{ 
-                  width: '100%', 
-                  padding: '6px 10px', 
-                  borderRadius: 8, 
-                  border: '1px solid #223046', 
-                  background: '#162033', 
-                  color: '#e6eaf2' 
-                }}
-              >
-                <option value="all">Все</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-              </select>
+            <div style={{ flex: '0 1 250px' }}>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 8, opacity: 0.8 }}>Канал</label>
+              <div style={{ 
+                padding: '8px', 
+                borderRadius: 8, 
+                border: '1px solid #223046', 
+                background: '#162033',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6
+              }}>
+                {['Empty', '1', '2', '3', '4'].map(channel => (
+                  <label key={channel} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={channelFilter.includes(channel)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setChannelFilter([...channelFilter.filter(f => f !== 'all'), channel])
+                        } else {
+                          const newFilters = channelFilter.filter(f => f !== channel)
+                          setChannelFilter(newFilters.length === 0 ? ['all'] : newFilters)
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span style={{ color: '#e6eaf2' }}>{channel}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -778,8 +800,17 @@ export default function Page() {
                 {clips
                   .filter((clip) => {
                     const matchesSearch = clip.title.toLowerCase().includes(searchTerm.toLowerCase())
-                    const matchesStatus = statusFilter === 'all' || clip.status === statusFilter
-                    const matchesChannel = channelFilter === 'all' || clip.channel === channelFilter
+                    
+                    // Status filter
+                    const matchesStatus = statusFilter.includes('all') || 
+                      (statusFilter.includes('Empty') && !clip.status) ||
+                      (clip.status && statusFilter.includes(clip.status))
+                    
+                    // Channel filter
+                    const matchesChannel = channelFilter.includes('all') ||
+                      (channelFilter.includes('Empty') && !clip.channel) ||
+                      (clip.channel && channelFilter.includes(clip.channel))
+                    
                     return matchesSearch && matchesStatus && matchesChannel
                   })
                   .map((clip) => (
@@ -787,8 +818,78 @@ export default function Page() {
                       <td>{clip.id}</td>
                       <td>{clip.task_id}</td>
                       <td>{clip.short_id}</td>
-                      <td>{clip.title}</td>
-                      <td style={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clip.description}</td>
+                      <td style={{ maxWidth: 300 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {clip.title}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              navigator.clipboard.writeText(clip.title)
+                                .then(() => {
+                                  const btn = e.target as HTMLButtonElement
+                                  const originalText = btn.textContent
+                                  btn.textContent = '✓'
+                                  btn.style.background = '#16a34a'
+                                  setTimeout(() => {
+                                    btn.textContent = originalText || '📋'
+                                    btn.style.background = '#162033'
+                                  }, 1000)
+                                })
+                                .catch(() => alert('Не удалось скопировать'))
+                            }}
+                            title="Copy title"
+                            style={{
+                              padding: '2px 6px',
+                              fontSize: 11,
+                              border: '1px solid #223046',
+                              background: '#162033',
+                              color: '#e6eaf2',
+                              borderRadius: 4,
+                              cursor: 'pointer',
+                              flexShrink: 0
+                            }}
+                          >
+                            📋
+                          </button>
+                        </div>
+                      </td>
+                      <td style={{ maxWidth: 400 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {clip.description}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              navigator.clipboard.writeText(clip.description)
+                                .then(() => {
+                                  const btn = e.target as HTMLButtonElement
+                                  const originalText = btn.textContent
+                                  btn.textContent = '✓'
+                                  btn.style.background = '#16a34a'
+                                  setTimeout(() => {
+                                    btn.textContent = originalText || '📋'
+                                    btn.style.background = '#162033'
+                                  }, 1000)
+                                })
+                                .catch(() => alert('Не удалось скопировать'))
+                            }}
+                            title="Copy description"
+                            style={{
+                              padding: '2px 6px',
+                              fontSize: 11,
+                              border: '1px solid #223046',
+                              background: '#162033',
+                              color: '#e6eaf2',
+                              borderRadius: 4,
+                              cursor: 'pointer',
+                              flexShrink: 0
+                            }}
+                          >
+                            📋
+                          </button>
+                        </div>
+                      </td>
                       <td>
                         <select 
                           value={clip.status || ''}
