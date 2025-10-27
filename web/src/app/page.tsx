@@ -3,8 +3,8 @@
 import React from 'react'
 /// <reference types="react" />
 import { useEffect, useState } from 'react'
-import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, API_BASE, type Task, type DownloadedItem, type Clip } from '@/lib/api'
-import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, listUpscaleTasks, type UpscaleTask } from '@/lib/upscale'
+import { createTask, listTasks, retryTask, deleteTask, clearTasks, listDownloads, deleteDownload, getTaskClips, updateClip, API_BASE, type Task, type DownloadedItem, type Clip } from '@/lib/api'
+import { useUpscaleTasks, triggerUpscaleScan, retryUpscale, getUpscaleSettings, saveUpscaleSettings, ensureUpscaleInstance, deleteUpscale, clearUpscale, clearGpuQueue, getGpuQueueStatus, listUpscaleTasks, type UpscaleTask } from '@/lib/upscale'
 
 function StageChip({ stage }: { stage?: string | null }) {
   const map: Record<string, { label: string; color: string }> = {
@@ -221,6 +221,7 @@ function UpscaleSection() {
   const [image, setImage] = useState('')
   const [conc, setConc] = useState(2)
   const [vastId, setVastId] = useState('')
+  const [gpuQueueCount, setGpuQueueCount] = useState(0)
 
   useEffect(() => {
     async function load() {
@@ -232,6 +233,18 @@ function UpscaleSection() {
       } catch {}
     }
     load()
+  }, [])
+
+  useEffect(() => {
+    async function loadGpuQueue() {
+      try {
+        const status = await getGpuQueueStatus()
+        setGpuQueueCount(status.total_jobs)
+      } catch {}
+    }
+    loadGpuQueue()
+    const interval = setInterval(loadGpuQueue, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   async function saveSettings(e: React.FormEvent) {
@@ -248,7 +261,37 @@ function UpscaleSection() {
           <button onClick={() => triggerUpscaleScan().then(refresh)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', background: '#162033', color: '#e6eaf2' }}>Сканировать to_upscale</button>
           <button onClick={() => ensureUpscaleInstance().then(refresh)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', background: '#162033', color: '#e6eaf2' }}>Запустить инстанс</button>
           <button onClick={() => setShowSettings(s => !s)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2' }}>{showSettings ? 'Закрыть' : 'Настройки'}</button>
-          <a href="/clips_upscaled" target="_blank" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2' }}>Открыть clips_upscaled</a>
+          <a href="/clips_upscaled" target="_blank" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #223046', color: '#e6eaf2', textDecoration: 'none', display: 'inline-block' }}>Открыть clips_upscaled</a>
+          <button
+            onClick={async () => {
+              if (!confirm(`Очистить очередь на GPU сервере?\n\nТекущая очередь: ${gpuQueueCount} задач(и)`)) return
+              try {
+                const result = await clearGpuQueue()
+                alert(`Очередь GPU очищена!\nУдалено: ${result.cleared?.total || 0} задач(и)`)
+                await refresh()
+              } catch (e) {
+                alert('Не удалось очистить очередь GPU: ' + (e as Error).message)
+              }
+            }}
+            style={{ 
+              padding: '6px 10px', 
+              borderRadius: 8, 
+              border: '1px solid #d97706', 
+              background: '#1f2937', 
+              color: '#fbbf24',
+              position: 'relative'
+            }}
+            title={`Очередь GPU: ${gpuQueueCount} задач(и)`}
+          >
+            Очистить очередь GPU {gpuQueueCount > 0 && <span style={{ 
+              fontSize: 10, 
+              background: '#d97706', 
+              color: 'white', 
+              borderRadius: 10, 
+              padding: '2px 6px', 
+              marginLeft: 4 
+            }}>{gpuQueueCount}</span>}
+          </button>
           <button
             onClick={async () => {
               if (!confirm('Очистить все задачи Upscale? Входные файлы из to_upscale также будут удалены.')) return
@@ -749,9 +792,18 @@ export default function Page() {
                       <td>
                         <select 
                           value={clip.status || ''}
-                          onChange={(e) => {
-                            // TODO: implement update clip status API call
-                            console.log('Update clip', clip.id, 'status to', e.target.value)
+                          onChange={async (e) => {
+                            const newStatus = e.target.value
+                            try {
+                              await updateClip(clip.id, { status: newStatus })
+                              // Update local state
+                              setClips(clips.map(c => 
+                                c.id === clip.id ? { ...c, status: newStatus } : c
+                              ))
+                            } catch (error) {
+                              console.error('Failed to update clip status:', error)
+                              alert('Не удалось обновить статус клипа')
+                            }
                           }}
                           style={{ 
                             padding: '4px 8px', 
@@ -770,9 +822,18 @@ export default function Page() {
                       <td>
                         <select 
                           value={clip.channel || ''}
-                          onChange={(e) => {
-                            // TODO: implement update clip channel API call
-                            console.log('Update clip', clip.id, 'channel to', e.target.value)
+                          onChange={async (e) => {
+                            const newChannel = e.target.value
+                            try {
+                              await updateClip(clip.id, { channel: newChannel })
+                              // Update local state
+                              setClips(clips.map(c => 
+                                c.id === clip.id ? { ...c, channel: newChannel } : c
+                              ))
+                            } catch (error) {
+                              console.error('Failed to update clip channel:', error)
+                              alert('Не удалось обновить канал клипа')
+                            }
                           }}
                           style={{ 
                             padding: '4px 8px', 

@@ -178,3 +178,21 @@ export async function getClip(clipId: number): Promise<Clip | null> {
     return null
   }
 }
+
+export async function updateClip(clipId: number, data: { status?: string; channel?: string }): Promise<{ ok: boolean }> {
+  try {
+    console.log('updateClip: API_BASE =', API_BASE, 'clipId =', clipId, 'data =', data)
+    const res = await fetch(`${API_BASE}/api/clips/${clipId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      mode: 'cors',
+    })
+    console.log('updateClip: Response status =', res.status)
+    if (!res.ok) throw new Error(`Failed to update clip: HTTP ${res.status}`)
+    return { ok: true }
+  } catch (e) {
+    console.error('updateClip: Error =', e)
+    throw e
+  }
+}

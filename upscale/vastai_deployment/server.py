@@ -783,6 +783,53 @@ def get_cut_job(job_id: int):
         resp['error'] = j['error']
     return jsonify(resp)
 
+
+@app.route('/clear_queue', methods=['POST'])
+def clear_queue():
+    """Clear all pending jobs from the queue."""
+    global jobs, job_counter
+    
+    # Count jobs by status
+    total = len(jobs)
+    pending = sum(1 for j in jobs.values() if j.get('status') in ('queued', 'pending'))
+    processing = sum(1 for j in jobs.values() if j.get('status') == 'processing')
+    
+    # Clear all jobs
+    jobs.clear()
+    job_counter = 0
+    
+    return jsonify({
+        "ok": True,
+        "message": "Queue cleared successfully",
+        "cleared": {
+            "total": total,
+            "pending": pending,
+            "processing": processing
+        }
+    })
+
+
+@app.route('/queue_status', methods=['GET'])
+def queue_status():
+    """Get current queue status."""
+    status_counts = {}
+    for j in jobs.values():
+        status = j.get('status', 'unknown')
+        status_counts[status] = status_counts.get(status, 0) + 1
+    
+    return jsonify({
+        "total_jobs": len(jobs),
+        "status_counts": status_counts,
+        "jobs": [
+            {
+                "job_id": job_id,
+                "status": j.get('status'),
+                "type": j.get('type', 'upscale')
+            }
+            for job_id, j in jobs.items()
+        ]
+    })
+
 # GPU server processes individual jobs without complex queuing
 
 

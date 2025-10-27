@@ -422,6 +422,34 @@ def api_list_clips(session: Session = Depends(get_session)):
             "hook_strength": c.hook_strength,
             "why_it_works": c.why_it_works,
             "file_path": c.file_path,
+            "status": c.status,
+            "channel": c.channel,
             "created_at": c.created_at.isoformat(),
+            "fragments": []  # Empty for list view, populated in detail view
         })
     return result
+
+
+@app.patch("/api/clips/{clip_id}")
+def api_update_clip(clip_id: int, payload: dict, session: Session = Depends(get_session)):
+    """Update clip status and/or channel"""
+    clip = session.get(Clip, clip_id)
+    if not clip:
+        raise HTTPException(status_code=404, detail="Clip not found")
+    
+    # Update only provided fields
+    if "status" in payload:
+        clip.status = payload["status"]
+    if "channel" in payload:
+        clip.channel = payload["channel"]
+    
+    session.add(clip)
+    session.commit()
+    session.refresh(clip)
+    
+    return {
+        "id": clip.id,
+        "status": clip.status,
+        "channel": clip.channel,
+        "message": "Clip updated successfully"
+    }

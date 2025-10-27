@@ -79,6 +79,8 @@ class Clip(SQLModel, table=True):
     hook_strength: Optional[str] = None  # high/medium/low
     why_it_works: Optional[str] = None
     file_path: Optional[str] = None  # Path to the generated clip file
+    status: Optional[str] = None  # Published, Cancelled, etc.
+    channel: Optional[str] = None  # Channel number: 1, 2, 3, 4
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     # Relationship to fragments

@@ -78,6 +78,54 @@ export async function clearUpscale(): Promise<{ ok: boolean }> {
   return res.json()
 }
 
+export async function clearGpuQueue(): Promise<{ ok: boolean; cleared?: any }> {
+  try {
+    // Get GPU URL from settings
+    const settings = await getUpscaleSettings()
+    const gpuUrl = (settings as any).VAST_UPSCALE_URL
+    
+    if (!gpuUrl) {
+      throw new Error('VAST_UPSCALE_URL not configured')
+    }
+    
+    const baseUrl = gpuUrl.replace(/\/$/, '')
+    const res = await fetch(`${baseUrl}/clear_queue`, { 
+      method: 'POST',
+      mode: 'cors',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+  } catch (e) {
+    console.error('clearGpuQueue: Error =', e)
+    throw e
+  }
+}
+
+export async function getGpuQueueStatus(): Promise<{ total_jobs: number; status_counts: any }> {
+  try {
+    const settings = await getUpscaleSettings()
+    const gpuUrl = (settings as any).VAST_UPSCALE_URL
+    
+    if (!gpuUrl) {
+      return { total_jobs: 0, status_counts: {} }
+    }
+    
+    const baseUrl = gpuUrl.replace(/\/$/, '')
+    const res = await fetch(`${baseUrl}/queue_status`, { 
+      method: 'GET',
+      mode: 'cors'
+    })
+    
+    if (!res.ok) return { total_jobs: 0, status_counts: {} }
+    return res.json()
+  } catch (e) {
+    console.error('getGpuQueueStatus: Error =', e)
+    return { total_jobs: 0, status_counts: {} }
+  }
+}
+
 export function useUpscaleTasks() {
   const [tasks, setTasks] = useState<UpscaleTask[]>([])
   const [loading, setLoading] = useState(false)
