@@ -17,8 +17,32 @@ cd /workspace/aporto
 
 # 3. Create and activate virtual environment
 echo "🐍 Setting up Python virtual environment..."
+
+# Ensure python3-venv is installed
+if ! python3 -m venv --help >/dev/null 2>&1; then
+    echo "  Installing python3-venv..."
+    apt-get install -y python3-venv
+fi
+
+# Create venv
+if [ -d .venv ]; then
+    echo "  Removing old venv..."
+    rm -rf .venv
+fi
+
 python3 -m venv .venv
-source .venv/bin/activate
+
+# Verify venv was created
+if [ ! -f .venv/bin/python3 ]; then
+    echo "❌ Failed to create virtual environment"
+    echo "Trying alternative method..."
+    python3 -m venv --without-pip .venv
+    source .venv/bin/activate
+    curl https://bootstrap.pypa.io/get-pip.py | python3
+else
+    source .venv/bin/activate
+    echo "  ✅ Virtual environment created"
+fi
 
 # 4. Upgrade pip and install requirements
 echo "📚 Installing Python dependencies..."
