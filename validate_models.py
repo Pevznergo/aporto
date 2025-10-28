@@ -37,30 +37,22 @@ def main():
     
     # Define model files to validate
     models = [
-        ("GFPGANv1.4.pth", "GFPGAN"),
-        ("realesr-general-x4v3.pth", "Real-ESRGAN")
+        ("models/GFPGANv1.4.pth", "GFPGAN"),
+        ("models/realesr-general-x4v3.pth", "Real-ESRGAN")
     ]
     
     all_valid = True
     
-    # Check if we're in the right directory
-    models_dir = "upscale/models"
-    if not os.path.exists(models_dir):
-        # Try with absolute path from workspace
-        models_dir = "/workspace/aporto/upscale/models"
-        if not os.path.exists(models_dir):
-            # Try relative path
-            models_dir = "models"
-    
-    for model_file, model_name in models:
-        model_path = os.path.join(models_dir, model_file)
+    for model_path, model_name in models:
+        # Check if we're in the right directory
         if not os.path.exists(model_path):
-            # Try to find the model in the current directory
-            if os.path.exists(model_file):
-                model_path = model_file
+            # Try to find the model in the upscale directory
+            upscale_model_path = os.path.join("upscale", model_path)
+            if os.path.exists(upscale_model_path):
+                model_path = upscale_model_path
             else:
                 # Try with absolute path from workspace
-                workspace_model_path = os.path.join("/workspace/aporto/upscale/models", model_file)
+                workspace_model_path = os.path.join("/workspace/aporto", model_path)
                 if os.path.exists(workspace_model_path):
                     model_path = workspace_model_path
         

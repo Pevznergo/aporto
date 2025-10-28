@@ -1,28 +1,28 @@
 #!/bin/bash
-# VASTAI GPU Server Installation Script (macOS version)
-# Run this on a macOS system to set up the environment
+# VASTAI GPU Server Installation Script
+# Run this on a fresh VASTAI instance to set up the environment
 
 set -e
 
-echo "🚀 Starting VASTAI GPU Server Installation (macOS version)..."
+echo "🚀 Starting VASTAI GPU Server Installation..."
 
-# 1. Check if Homebrew is installed
-if ! command -v brew &> /dev/null; then
-    echo " Homebrew is not installed. Please install Homebrew first:"
-    echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-    exit 1
-fi
-
-# 2. Install system packages
+# 1. Install system packages
 echo "📦 Installing system packages..."
-brew install python3 ffmpeg git wget
+apt-get update -y
+apt-get install -y python3-venv python3-pip ffmpeg git wget curl
 
-# 3. Create project directory and navigate
+# 2. Create project directory and navigate
 mkdir -p /workspace/aporto
 cd /workspace/aporto
 
-# 4. Create and activate virtual environment
+# 3. Create and activate virtual environment
 echo "🐍 Setting up Python virtual environment..."
+
+# Ensure python3-venv is installed
+if ! python3 -m venv --help >/dev/null 2>&1; then
+    echo "  Installing python3-venv..."
+    apt-get install -y python3-venv
+fi
 
 # Create venv
 if [ -d .venv ]; then
@@ -35,25 +35,42 @@ python3 -m venv .venv
 # Verify venv was created
 if [ ! -f .venv/bin/python3 ]; then
     echo "❌ Failed to create virtual environment"
-    exit 1
+    echo "Trying alternative method..."
+    python3 -m venv --without-pip .venv
+    source .venv/bin/activate
+    curl https://bootstrap.pypa.io/get-pip.py | python3
 else
     source .venv/bin/activate
     echo "  ✅ Virtual environment created"
 fi
 
-# 5. Upgrade pip and install requirements
+# 4. Upgrade pip and install requirements
 echo "📚 Installing Python dependencies..."
 python -m pip install --upgrade pip setuptools wheel
 
-# Install requirements
-pip install -r upscale/vastai_deployment/requirements.txt
+# Check for distutils packages that may cause issues
+chmod +x upscale/vastai_deployment/fix_distutils_packages.sh
+NEEDS_IGNORE=$(upscale/vastai_deployment/fix_distutils_packages.sh)
 
-# 6. Create necessary directories
+# Install requirements (assuming this script is in vastai_deployment/)
+if [ -f /tmp/.pip_ignore_installed ]; then
+    echo "  Using --ignore-installed for problematic packages..."
+    pip install --ignore-installed -r upscale/vastai_deployment/requirements.txt
+else
+    pip install -r upscale/vastai_deployment/requirements.txt
+fi
+
+# Apply basicsr compatibility fix using the auto-fix script
+echo "🩹 Applying basicsr compatibility fix..."
+chmod +x upscale/vastai_deployment/auto_fix_basicsr.sh
+upscale/vastai_deployment/auto_fix_basicsr.sh
+
+# 5. Create necessary directories
 echo "📁 Creating directories..."
 mkdir -p /workspace/aporto/upscale/models
 mkdir -p /workspace/cut/to_cut /workspace/cut/cuted /workspace/cut/to_upscale /workspace/cut/upscaled
 
-# 7. Download model weights
+# 6. Download model weights
 echo "🎯 Downloading model weights..."
 cd /workspace/aporto/upscale/models
 
@@ -66,12 +83,8 @@ fi
 # Real-ESRGAN weights  
 if [ ! -f "realesr-general-x4v3.pth" ]; then
     echo "  Downloading Real-ESRGAN model..."
-    # Use the correct URL for the model and retry if needed
-    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth || {
-        echo "  First attempt failed, trying alternative URL..."
-        rm -f realesr-general-x4v3.pth
-        wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.3.0/realesr-general-x4v3.pth
-    }
+    # Use the correct URL for the model
+    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
 fi
 
 # Validate downloaded model files
@@ -92,13 +105,13 @@ done
 echo "📏 Model file sizes:"
 ls -lh /workspace/aporto/upscale/models/*.pth
 
-# 8. Validate models with Python script
+# 7. Validate models with Python script
 echo "🧪 Validating model files with Python..."
 cd /workspace/aporto
 source .venv/bin/activate
 
-# Copy validation script to workspace (using absolute path)
-cp /workspace/aporto/upscale/vastai_deployment/validate_models.py .
+# Copy validation script to workspace
+cp upscale/vastai_deployment/../validate_models.py .
 
 python validate_models.py || {
     echo "❌ Model validation failed!"
@@ -113,16 +126,12 @@ python validate_models.py || {
     echo "  Re-downloading GFPGAN model..."
     wget -O GFPGANv1.4.pth https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth
     
-    # Re-download Real-ESRGAN with retry logic
+    # Re-download Real-ESRGAN
     if [ -f "realesr-general-x4v3.pth" ]; then
         rm realesr-general-x4v3.pth
     fi
     echo "  Re-downloading Real-ESRGAN model..."
-    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth || {
-        echo "  First attempt failed, trying alternative URL..."
-        rm -f realesr-general-x4v3.pth
-        wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.3.0/realesr-general-x4v3.pth
-    }
+    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
     
     # Validate again
     cd /workspace/aporto
@@ -132,7 +141,7 @@ python validate_models.py || {
     }
 }
 
-# 9. Create environment file
+# 8. Create environment file
 echo "⚙️ Creating environment configuration..."
 cat > /workspace/aporto/.env << 'EOF'
 # Python interpreter (for subprocess calls)
@@ -145,8 +154,8 @@ XDG_CACHE_HOME=/workspace/aporto/upscale/models
 
 # Cut configuration
 CUT_BASE_DIR=/workspace/cut
-CUT_REQUIRE_CUDA=0
-CUT_FORCE_DEVICE=cpu
+CUT_REQUIRE_CUDA=1
+CUT_FORCE_DEVICE=cuda
 CUT_ENABLE_UPSCALE=1
 WHISPER_MODEL=small
 
@@ -154,16 +163,61 @@ WHISPER_MODEL=small
 # OPENAI_API_KEY=your_key_here
 EOF
 
-# 10. Test installation
+# 9. Test installation
 echo "🧪 Testing installation..."
 cd /workspace/aporto
 source .venv/bin/activate
 source .env
 
+python -c "
+import numpy as np
+import torch
+import torchvision
+from realesrgan.utils import RealESRGANer
+from gfpgan import GFPGANer
+print('✅ All imports successful!')
+print(f'NumPy: {np.__version__}')
+print(f'PyTorch: {torch.__version__}')
+print(f'TorchVision: {torchvision.__version__}')
+print(f'CUDA available: {torch.cuda.is_available()}')
+if torch.cuda.is_available():
+    print(f'GPU: {torch.cuda.get_device_name(0)}')
+"
+
+# 10. Create systemd service
+echo "🔧 Creating systemd service..."
+cat > /etc/systemd/system/vast-upscale.service << 'EOF'
+[Unit]
+Description=VAST GPU Upscale Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/workspace/aporto
+Environment=PATH=/workspace/aporto/.venv/bin
+EnvironmentFile=/workspace/aporto/.env
+ExecStart=/workspace/aporto/.venv/bin/python upscale/vastai_deployment/server.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/workspace/server.log
+StandardError=append:/workspace/server.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 11. Start and enable service
+systemctl daemon-reload
+systemctl enable vast-upscale.service
+systemctl start vast-upscale.service
+
 echo "🎉 Installation complete!"
 echo ""
 echo "Next steps:"
-echo "1. Set your OPENAI_API_KEY in /workspace/aporto/.env (if needed)"
-echo "2. Run the server: nohup python3 upscale/vastai_deployment/server.py >/workspace/server.log 2>&1 &"
+echo "1. Set your OPENAI_API_KEY in /workspace/aporto/.env"
+echo "2. Check service status: systemctl status vast-upscale.service"
 echo "3. View logs: tail -f /workspace/server.log"
 echo "4. Test health endpoint: curl http://localhost:5000/health"
+echo ""
+echo "Service will automatically start on boot."
