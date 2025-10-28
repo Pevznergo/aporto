@@ -83,65 +83,13 @@ fi
 # Real-ESRGAN weights  
 if [ ! -f "realesr-general-x4v3.pth" ]; then
     echo "  Downloading Real-ESRGAN model..."
-    # Use the correct URL for the model
-    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
+    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.3.0/realesr-general-x4v3.pth
 fi
-
-# Validate downloaded model files
-echo "🔍 Validating model files..."
-for model in GFPGANv1.4.pth realesr-general-x4v3.pth; do
-    if [ -f "$model" ]; then
-        if [ ! -s "$model" ]; then
-            echo "  ❌ $model is empty, removing..."
-            rm "$model"
-        else
-            echo "  ✅ $model downloaded successfully"
-        fi
-    else
-        echo "  ❌ $model not found"
-    fi
-done
 
 echo "📏 Model file sizes:"
 ls -lh /workspace/aporto/upscale/models/*.pth
 
-# 7. Validate models with Python script
-echo "🧪 Validating model files with Python..."
-cd /workspace/aporto
-source .venv/bin/activate
-
-# Copy validation script to workspace
-cp upscale/vastai_deployment/../validate_models.py .
-
-python validate_models.py || {
-    echo "❌ Model validation failed!"
-    echo "Trying to re-download models..."
-    
-    cd /workspace/aporto/upscale/models
-    
-    # Re-download GFPGAN
-    if [ -f "GFPGANv1.4.pth" ]; then
-        rm GFPGANv1.4.pth
-    fi
-    echo "  Re-downloading GFPGAN model..."
-    wget -O GFPGANv1.4.pth https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth
-    
-    # Re-download Real-ESRGAN
-    if [ -f "realesr-general-x4v3.pth" ]; then
-        rm realesr-general-x4v3.pth
-    fi
-    echo "  Re-downloading Real-ESRGAN model..."
-    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
-    
-    # Validate again
-    cd /workspace/aporto
-    python validate_models.py || {
-        echo "❌ Model validation failed even after re-download!"
-        exit 1
-    }
-}
-
-# 8. Create environment file
+# 7. Create environment file
 echo "⚙️ Creating environment configuration..."
 cat > /workspace/aporto/.env << 'EOF'
 # Python interpreter (for subprocess calls)
@@ -163,7 +111,7 @@ WHISPER_MODEL=small
 # OPENAI_API_KEY=your_key_here
 EOF
 
-# 9. Test installation
+# 8. Test installation
 echo "🧪 Testing installation..."
 cd /workspace/aporto
 source .venv/bin/activate
@@ -184,7 +132,7 @@ if torch.cuda.is_available():
     print(f'GPU: {torch.cuda.get_device_name(0)}')
 "
 
-# 10. Create systemd service
+# 9. Create systemd service
 echo "🔧 Creating systemd service..."
 cat > /etc/systemd/system/vast-upscale.service << 'EOF'
 [Unit]
@@ -207,7 +155,7 @@ StandardError=append:/workspace/server.log
 WantedBy=multi-user.target
 EOF
 
-# 11. Start and enable service
+# 10. Start and enable service
 systemctl daemon-reload
 systemctl enable vast-upscale.service
 systemctl start vast-upscale.service

@@ -77,65 +77,6 @@ def _resolve_model_paths():
         "REALESRGAN_MODEL_PATH": realesr,
     }
 
-def _validate_model_files():
-    """Validate that required model files exist and are not corrupted."""
-    results = {
-        "gfpgan": {"status": "unknown", "path": None, "error": None},
-        "realesrgan": {"status": "unknown", "path": None, "error": None}
-    }
-    
-    try:
-        # Check GFPGAN model
-        gfpgan_path = os.environ.get('GFPGAN_MODEL_PATH')
-        results["gfpgan"]["path"] = gfpgan_path
-        if gfpgan_path and os.path.exists(gfpgan_path):
-            if os.path.getsize(gfpgan_path) == 0:
-                results["gfpgan"]["status"] = "error"
-                results["gfpgan"]["error"] = "File is empty"
-            else:
-                # Try to load the model file
-                try:
-                    import torch
-                    torch.load(gfpgan_path, map_location=torch.device('cpu'))
-                    results["gfpgan"]["status"] = "ok"
-                except Exception as e:
-                    results["gfpgan"]["status"] = "error"
-                    results["gfpgan"]["error"] = f"File is corrupted: {str(e)}"
-        elif gfpgan_path:
-            results["gfpgan"]["status"] = "error"
-            results["gfpgan"]["error"] = "File not found"
-        else:
-            results["gfpgan"]["status"] = "error"
-            results["gfpgan"]["error"] = "Path not configured"
-        
-        # Check Real-ESRGAN model
-        realesr_path = os.environ.get('REALESRGAN_MODEL_PATH')
-        results["realesrgan"]["path"] = realesr_path
-        if realesr_path and os.path.exists(realesr_path):
-            if os.path.getsize(realesr_path) == 0:
-                results["realesrgan"]["status"] = "error"
-                results["realesrgan"]["error"] = "File is empty"
-            else:
-                # Try to load the model file
-                try:
-                    import torch
-                    torch.load(realesr_path, map_location=torch.device('cpu'))
-                    results["realesrgan"]["status"] = "ok"
-                except Exception as e:
-                    results["realesrgan"]["status"] = "error"
-                    results["realesrgan"]["error"] = f"File is corrupted: {str(e)}"
-        elif realesr_path:
-            results["realesrgan"]["status"] = "error"
-            results["realesrgan"]["error"] = "File not found"
-        else:
-            results["realesrgan"]["status"] = "error"
-            results["realesrgan"]["error"] = "Path not configured"
-            
-        return results
-    except Exception as e:
-        print(f"Model validation failed: {e}")
-        return results
-
 # In-memory job tracking
 jobs = {}
 job_counter = 0
@@ -288,17 +229,7 @@ def get_job_status(job_id):
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
-    # Validate model files as part of health check
-    model_results = _validate_model_files()
-    
-    # Check if all models are OK
-    all_models_ok = all(result["status"] == "ok" for result in model_results.values())
-    
-    return jsonify({
-        "status": "healthy" if all_models_ok else "degraded",
-        "service": "video-upscale-api",
-        "models": model_results
-    })
+    return jsonify({"status": "healthy", "service": "video-upscale-api"})
 
 
 @app.route('/env', methods=['GET'])
@@ -694,6 +625,8 @@ def cut_from_url():
         t.start()
         print(f"[GPU-CUT] Job submitted successfully: job_id={job_id}")
         return jsonify({"job_id": job_id, "status": "processing"}), 202
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
