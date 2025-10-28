@@ -51,12 +51,29 @@ def download_realesrgan_model():
         model_url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth"
         model_path = os.path.join(models_dir, "realesr-general-x4v3.pth")
         
-        if not os.path.exists(model_path):
-            subprocess.run(['wget', '-O', model_path, model_url], check=True)
-            print("Successfully downloaded Real-ESRGAN model")
-        else:
-            print("Real-ESRGAN model already exists")
-            
+        # Check if model already exists and is valid
+        if os.path.exists(model_path):
+            # Check if file is not empty
+            if os.path.getsize(model_path) > 0:
+                # Try to validate the model file
+                try:
+                    import torch
+                    torch.load(model_path, map_location=torch.device('cpu'))
+                    print("Real-ESRGAN model already exists and is valid")
+                    return True
+                except Exception as e:
+                    print(f"Existing model file is corrupted: {e}")
+                    print("Re-downloading model file...")
+                    # Remove corrupted file
+                    os.remove(model_path)
+            else:
+                print("Existing model file is empty. Re-downloading...")
+                # Remove empty file
+                os.remove(model_path)
+        
+        # Download the model
+        subprocess.run(['wget', '-O', model_path, model_url], check=True)
+        print("Successfully downloaded Real-ESRGAN model")
         return True
         
     except Exception as e:

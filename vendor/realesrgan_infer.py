@@ -112,17 +112,34 @@ def main() -> int:
         print(f"Warning: model_path {model_path} not found, Real-ESRGAN will try to download")
         model_path = None
 
+    # Validate model file if it exists
+    if model_path and os.path.isfile(model_path):
+        try:
+            # Check if file is not empty
+            if os.path.getsize(model_path) == 0:
+                print(f"Error: Model file {model_path} is empty")
+                return 1
+            # Try to load the model file to check if it's valid
+            torch.load(model_path, map_location=torch.device('cpu'))
+        except Exception as e:
+            print(f"Error: Model file {model_path} is corrupted or invalid: {e}")
+            return 1
+
     # Create restorer using signature available in installed realesrgan.utils
     # Installed version selects device internally; do not pass device/gpu_id
-    restorer = RealESRGANer(
-        scale=netscale,
-        model_path=model_path,
-        model=net,
-        tile=0,
-        tile_pad=10,
-        pre_pad=0,
-        half=half,
-    )
+    try:
+        restorer = RealESRGANer(
+            scale=netscale,
+            model_path=model_path,
+            model=net,
+            tile=0,
+            tile_pad=10,
+            pre_pad=0,
+            half=half,
+        )
+    except Exception as e:
+        print(f"Failed to initialize RealESRGANer: {e}")
+        return 1
 
     face_enhancer = None
     if args.face_enhance:
