@@ -11,7 +11,14 @@ import json
 import threading
 import subprocess
 from flask import Flask, request, jsonify, send_file
-from upscale_app import upscale_video_with_realesrgan
+
+# Import upscale function
+try:
+    from upscale_app import upscale_video_with_realesrgan
+except Exception as e:
+    print(f"Warning: Failed to import upscale_video_with_realesrgan: {e}")
+    def upscale_video_with_realesrgan(input_video_path, output_video_path):
+        raise NotImplementedError("Upscaling function not available")
 
 # Optional imports for GPU-based transcription and cutting
 try:
@@ -210,6 +217,14 @@ def upscale_video():
     global job_counter
     
     try:
+        # Validate model files before processing
+        model_results = _validate_model_files()
+        if not all(result["status"] == "ok" for result in model_results.values()):
+            return jsonify({
+                "error": "Model files are not valid",
+                "models": model_results
+            }), 500
+        
         data = request.get_json()
         input_path = data.get('input_path')
         output_path = data.get('output_path')
@@ -251,7 +266,8 @@ def upscale_video():
 def process_upscale_job(job_id, input_path, output_path):
     """Process the upscaling job in background."""
     try:
-        success = upscale_video_with_realesrgan(input_path, output_path)
+        # Map the parameters to match the function signature
+        success = upscale_video_with_realesrgan(input_video_path=input_path, output_video_path=output_path)
         
         jobs[job_id]["status"] = "completed" if success else "failed"
         jobs[job_id]["end_time"] = time.time()
@@ -639,6 +655,14 @@ def cut_from_url():
     """
     global job_counter
     try:
+        # Validate model files before processing
+        model_results = _validate_model_files()
+        if not all(result["status"] == "ok" for result in model_results.values()):
+            return jsonify({
+                "error": "Model files are not valid",
+                "models": model_results
+            }), 500
+        
         data = request.get_json()
         print(f"[GPU-CUT] Received cut_url request: {data}")
         url = data.get('url')
@@ -784,7 +808,8 @@ def process_cut_job(job_id: int, url: str, model_size: str, to_dir: str, out_dir
                 tmp_out = os.path.join(dest_dir, f".{name}.up.tmp.mp4")
                 ok = False
                 try:
-                    ok = upscale_video_with_realesrgan(src, tmp_out)
+                    # Map the parameters to match the function signature
+                    ok = upscale_video_with_realesrgan(input_video_path=src, output_video_path=tmp_out)
                 except Exception as _e:
                     ok = False
                 if not ok or not os.path.exists(tmp_out):
