@@ -24,13 +24,15 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
         # Additional options to bypass restrictions
         "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         "nocheckcertificate": True,
+        # Try to get best quality up to 1080p
+        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
     }
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filename = ydl.prepare_filename(info)
-    video_id = info.get("id")
+    video_id = info.get("id", "")
     file_path = os.path.abspath(filename)
-    original_title = info.get("title")
+    original_title = info.get("title", "")
     return video_id, original_title, file_path
 
 
@@ -51,7 +53,7 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
         # Prefer MP4 container for compatibility when merging
         "merge_output_format": "mp4",
         # Try to get best quality up to 1080p with multiple fallbacks
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best",
+        "format": "bestvideo[height>=720][height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height>=720][height<=1080]+bestaudio/best[height>=720][height<=1080]/best",
         # Add headers to avoid 403 errors
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -73,7 +75,7 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
         if "requested format not available" in msg.lower() or "no such format" in msg.lower():
             raise RuntimeError("Недоступно качество 720p+ для этого видео")
         raise
-    video_id = info.get("id")
+    video_id = info.get("id", "")
     file_path = os.path.abspath(filename)
-    original_title = info.get("title")
+    original_title = info.get("title", "")
     return video_id, original_title, file_path
