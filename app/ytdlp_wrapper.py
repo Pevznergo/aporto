@@ -83,8 +83,10 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
             "noprogress": True,
             "quiet": True,
             "no_warnings": True,
-            # Use the format ID of our selected format
-            "format": best_format['format_id'],
+            # Use format string that encourages separate video and audio streams
+            "format": "bestvideo[height>=720]+bestaudio/best[height>=720]/best",
+            # Ensure ffmpeg is used for merging
+            "merge_output_format": "mp4",
             # Add headers to avoid 403 errors
             "http_headers": {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -199,8 +201,10 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
             "quiet": True,
             "no_warnings": True,
             "restrictfilenames": True,
-            # Use the format ID of our selected format
-            "format": best_format['format_id'],
+            # Use format string that encourages separate video and audio streams
+            "format": "bestvideo[height>=720]+bestaudio/best[height>=720]/best",
+            # Ensure ffmpeg is used for merging
+            "merge_output_format": "mp4",
             # Add headers to avoid 403 errors
             "http_headers": {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
