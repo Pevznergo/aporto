@@ -27,7 +27,7 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
     """
     os.makedirs(output_dir, exist_ok=True)
     
-    # Define info options
+    # Use the recommended extractor args from the GitHub issue
     info_opts: Any = {
         "quiet": True,
         "no_warnings": True,
@@ -39,8 +39,8 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
             "Accept-Language": "en-us,en;q=0.5",
             "Sec-Fetch-Mode": "navigate",
         },
-        # Additional options to bypass restrictions
-        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        # Use the extractor args that should help get better quality formats
+        "extractor_args": {"youtube": {"player_client": ["default", "-tv"]}},
         "nocheckcertificate": True,
     }
     
@@ -56,11 +56,16 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
             best_format = None
             best_height = 0
             
-            for f in formats:
+            # Sort formats by height descending to get the highest quality first
+            sorted_formats = sorted(formats, key=lambda x: x.get('height', 0) or 0, reverse=True)
+            
+            for f in sorted_formats:
                 height = f.get('height', 0)
-                if height >= 720 and height > best_height:
+                # Look for formats with height >= 720
+                if height >= 720:
                     best_height = height
                     best_format = f
+                    break  # Take the first (highest quality) one
             
             if best_format is None:
                 # Collect all available heights for error message
@@ -87,8 +92,8 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
                 "Accept-Language": "en-us,en;q=0.5",
                 "Sec-Fetch-Mode": "navigate",
             },
-            # Additional options to bypass restrictions
-            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+            # Use the extractor args that should help get better quality formats
+            "extractor_args": {"youtube": {"player_client": ["default", "-tv"]}},
             "nocheckcertificate": True,
         }
         
@@ -137,7 +142,7 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
     """
     os.makedirs(output_dir, exist_ok=True)
     
-    # Define info options
+    # Use the recommended extractor args from the GitHub issue
     info_opts: Any = {
         "quiet": True,
         "no_warnings": True,
@@ -149,8 +154,8 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
             "Accept-Language": "en-us,en;q=0.5",
             "Sec-Fetch-Mode": "navigate",
         },
-        # Additional options to bypass restrictions
-        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        # Use the extractor args that should help get better quality formats
+        "extractor_args": {"youtube": {"player_client": ["default", "-tv"]}},
         "nocheckcertificate": True,
     }
     
@@ -166,11 +171,16 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
             best_format = None
             best_height = 0
             
-            for f in formats:
+            # Sort formats by height descending to get the highest quality first
+            sorted_formats = sorted(formats, key=lambda x: x.get('height', 0) or 0, reverse=True)
+            
+            for f in sorted_formats:
                 height = f.get('height', 0)
-                if height >= 720 and height > best_height:
+                # Look for formats with height >= 720
+                if height >= 720:
                     best_height = height
                     best_format = f
+                    break  # Take the first (highest quality) one
             
             if best_format is None:
                 # Collect all available heights for error message
@@ -198,8 +208,8 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
                 "Accept-Language": "en-us,en;q=0.5",
                 "Sec-Fetch-Mode": "navigate",
             },
-            # Additional options to bypass restrictions
-            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+            # Use the extractor args that should help get better quality formats
+            "extractor_args": {"youtube": {"player_client": ["default", "-tv"]}},
             "nocheckcertificate": True,
         }
         
