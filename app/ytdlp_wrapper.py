@@ -26,12 +26,12 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
     file_path is absolute.
     """
     os.makedirs(output_dir, exist_ok=True)
-    # Use more flexible format selection
-    ydl_opts = {
-        "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
-        "noprogress": True,
+    
+    # Define info options
+    info_opts: Any = {
         "quiet": True,
         "no_warnings": True,
+        "simulate": True,
         # Add headers to avoid 403 errors
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -42,19 +42,59 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
         # Additional options to bypass restrictions
         "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         "nocheckcertificate": True,
-        # Flexible format selection - prioritize high quality
-        "format": "bestvideo[height>=720]+bestaudio/best[height>=720]/best",
     }
     
     try:
-        with YoutubeDL(ydl_opts) as ydl:
-            info: Any = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
+        # First, get info about available formats
+        with YoutubeDL(info_opts) as ydl:
+            info: Any = ydl.extract_info(url, download=False)
             
-            # Check video quality
-            height = info.get('height', 0)
-            if height < 720:
-                raise RuntimeError(f"Video quality is too low: {height}p. Minimum required is 720p.")
+            # Get available formats
+            formats: List[Any] = info.get('formats', []) or []
+            
+            # Find the best format with height >= 720
+            best_format = None
+            best_height = 0
+            
+            for f in formats:
+                height = f.get('height', 0)
+                if height >= 720 and height > best_height:
+                    best_height = height
+                    best_format = f
+            
+            if best_format is None:
+                # Collect all available heights for error message
+                available_heights = []
+                for f in formats:
+                    h = f.get('height')
+                    if h:
+                        available_heights.append(h)
+                available_heights = sorted(list(set(available_heights)), reverse=True)
+                raise RuntimeError(f"Could not find acceptable quality (minimum 720p required). Available heights: {available_heights}")
+        
+        # Now download with the best available format
+        ydl_opts = {
+            "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
+            "noprogress": True,
+            "quiet": True,
+            "no_warnings": True,
+            # Use the format ID of our selected format
+            "format": best_format['format_id'],
+            # Add headers to avoid 403 errors
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-us,en;q=0.5",
+                "Sec-Fetch-Mode": "navigate",
+            },
+            # Additional options to bypass restrictions
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+            "nocheckcertificate": True,
+        }
+        
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
             
             # Convert to MP4 if needed
             ext = os.path.splitext(filename)[1].lower()
@@ -66,24 +106,23 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
                 filename = mp4_filename
                 
     except Exception as e:
-        # Provide detailed error with available formats
-        try:
-            # Get available formats for error message
-            info_opts = ydl_opts.copy()
-            info_opts["simulate"] = True
-            info_opts["format"] = "best"
-            with YoutubeDL(info_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                formats = info.get('formats', [])
-                available_heights = []
-                for f in formats:
-                    h = f.get('height')
-                    if h:
-                        available_heights.append(h)
-                available_heights = sorted(list(set(available_heights)), reverse=True)
-            raise RuntimeError(f"Could not download acceptable quality. Available heights: {available_heights}")
-        except Exception:
-            raise RuntimeError("Could not download acceptable quality (minimum 720p required)")
+        if "Could not find acceptable quality" in str(e):
+            raise
+        else:
+            # Collect all available heights for error message
+            try:
+                with YoutubeDL(info_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    formats = info.get('formats', []) or []
+                    available_heights = []
+                    for f in formats:
+                        h = f.get('height')
+                        if h:
+                            available_heights.append(h)
+                    available_heights = sorted(list(set(available_heights)), reverse=True)
+                raise RuntimeError(f"Could not download acceptable quality. Available heights: {available_heights}")
+            except Exception:
+                raise RuntimeError("Could not download acceptable quality (minimum 720p required)")
             
     video_id = info.get("id", "") or ""
     file_path = os.path.abspath(filename)
@@ -94,17 +133,15 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
 def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
     """
     Downloads the video in high quality (720p or higher) and saves filename as the video title.
-    Prioritizes 1080p but will accept 720p if 1080p is unavailable.
     Returns (video_id, original_title, file_path).
     """
     os.makedirs(output_dir, exist_ok=True)
-    # Use more flexible format selection
-    ydl_opts = {
-        "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
-        "noprogress": True,
+    
+    # Define info options
+    info_opts: Any = {
         "quiet": True,
         "no_warnings": True,
-        "restrictfilenames": True,
+        "simulate": True,
         # Add headers to avoid 403 errors
         "http_headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -115,19 +152,60 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
         # Additional options to bypass restrictions
         "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         "nocheckcertificate": True,
-        # Flexible format selection - prioritize high quality
-        "format": "bestvideo[height>=720]+bestaudio/best[height>=720]/best",
     }
     
     try:
-        with YoutubeDL(ydl_opts) as ydl:
-            info: Any = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
+        # First, get info about available formats
+        with YoutubeDL(info_opts) as ydl:
+            info: Any = ydl.extract_info(url, download=False)
             
-            # Check video quality
-            height = info.get('height', 0)
-            if height < 720:
-                raise RuntimeError(f"Video quality is too low: {height}p. Minimum required is 720p.")
+            # Get available formats
+            formats: List[Any] = info.get('formats', []) or []
+            
+            # Find the best format with height >= 720
+            best_format = None
+            best_height = 0
+            
+            for f in formats:
+                height = f.get('height', 0)
+                if height >= 720 and height > best_height:
+                    best_height = height
+                    best_format = f
+            
+            if best_format is None:
+                # Collect all available heights for error message
+                available_heights = []
+                for f in formats:
+                    h = f.get('height')
+                    if h:
+                        available_heights.append(h)
+                available_heights = sorted(list(set(available_heights)), reverse=True)
+                raise RuntimeError(f"Could not find acceptable quality (minimum 720p required). Available heights: {available_heights}")
+        
+        # Now download with the best available format
+        ydl_opts = {
+            "outtmpl": os.path.join(output_dir, "%(title)s.%(ext)s"),
+            "noprogress": True,
+            "quiet": True,
+            "no_warnings": True,
+            "restrictfilenames": True,
+            # Use the format ID of our selected format
+            "format": best_format['format_id'],
+            # Add headers to avoid 403 errors
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-us,en;q=0.5",
+                "Sec-Fetch-Mode": "navigate",
+            },
+            # Additional options to bypass restrictions
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+            "nocheckcertificate": True,
+        }
+        
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
             
             # Convert to MP4 if needed
             ext = os.path.splitext(filename)[1].lower()
@@ -139,24 +217,23 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
                 filename = mp4_filename
                 
     except Exception as e:
-        # Provide detailed error with available formats
-        try:
-            # Get available formats for error message
-            info_opts = ydl_opts.copy()
-            info_opts["simulate"] = True
-            info_opts["format"] = "best"
-            with YoutubeDL(info_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                formats = info.get('formats', [])
-                available_heights = []
-                for f in formats:
-                    h = f.get('height')
-                    if h:
-                        available_heights.append(h)
-                available_heights = sorted(list(set(available_heights)), reverse=True)
-            raise RuntimeError(f"Could not download acceptable quality. Available heights: {available_heights}")
-        except Exception:
-            raise RuntimeError("Could not download acceptable quality (minimum 720p required)")
+        if "Could not find acceptable quality" in str(e):
+            raise
+        else:
+            # Collect all available heights for error message
+            try:
+                with YoutubeDL(info_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    formats = info.get('formats', []) or []
+                    available_heights = []
+                    for f in formats:
+                        h = f.get('height')
+                        if h:
+                            available_heights.append(h)
+                    available_heights = sorted(list(set(available_heights)), reverse=True)
+                raise RuntimeError(f"Could not download acceptable quality. Available heights: {available_heights}")
+            except Exception:
+                raise RuntimeError("Could not download acceptable quality (minimum 720p required)")
             
     video_id = info.get("id", "") or ""
     file_path = os.path.abspath(filename)
