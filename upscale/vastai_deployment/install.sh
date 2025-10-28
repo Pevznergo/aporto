@@ -83,7 +83,7 @@ fi
 # Real-ESRGAN weights  
 if [ ! -f "realesr-general-x4v3.pth" ]; then
     echo "  Downloading Real-ESRGAN model..."
-    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.3.0/realesr-general-x4v3.pth
+    wget -O realesr-general-x4v3.pth https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
 fi
 
 echo "📏 Model file sizes:"
