@@ -44,20 +44,33 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
             # Remove duplicates and sort
             available_heights = sorted(list(set(available_heights)), reverse=True)
             
-            # Check if 1080p is available
-            if 1080 not in available_heights:
-                raise RuntimeError(f"1080p quality is not available for this video. Available heights: {available_heights}")
+            # Find the best available quality (prefer 1080p, but accept 720p or higher)
+            best_quality = None
+            for height in available_heights:
+                if height >= 720:
+                    best_quality = height
+                    break
+            
+            if best_quality is None:
+                raise RuntimeError(f"No acceptable quality available (minimum 720p required). Available heights: {available_heights}")
         
-        # Now download with exactly 1080p format
-        ydl_opts["format"] = "bestvideo[height=1080]+bestaudio/best[height=1080]"
+        # Now download with the best available quality (720p or higher)
+        if best_quality == 1080:
+            ydl_opts["format"] = "bestvideo[height=1080]+bestaudio/best[height=1080]"
+        elif best_quality == 720:
+            ydl_opts["format"] = "bestvideo[height=720]+bestaudio/best[height=720]"
+        else:
+            # For other qualities >= 720p
+            ydl_opts["format"] = f"bestvideo[height={best_quality}]+bestaudio/best[height={best_quality}]"
+            
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # Check if the downloaded video is exactly 1080p
+            # Check if the downloaded video meets our quality requirements
             height = info.get('height', 0)
-            if height != 1080:
-                raise RuntimeError(f"Video quality is not 1080p: {height}p. Only 1080p videos are allowed.")
+            if height < 720:
+                raise RuntimeError(f"Video quality is too low: {height}p. Minimum required is 720p.")
     except Exception as e:
         # Map any format-not-found cases to a clear error
         msg = str(e)
@@ -75,9 +88,9 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
                         if height:
                             available_heights.append(height)
                     available_heights = sorted(list(set(available_heights)), reverse=True)
-                raise RuntimeError(f"1080p quality is not available for this video. Available heights: {available_heights}")
+                raise RuntimeError(f"No acceptable quality available (minimum 720p required). Available heights: {available_heights}")
             except Exception:
-                raise RuntimeError("1080p quality is not available for this video")
+                raise RuntimeError("No acceptable quality available (minimum 720p required)")
         raise
     video_id = info.get("id", "") or ""
     file_path = os.path.abspath(filename)
@@ -87,7 +100,8 @@ def download_video(url: str, output_dir: str) -> Tuple[str, str, str]:
 
 def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
     """
-    Downloads the video in exactly 1080p quality and saves filename as the video title.
+    Downloads the video in high quality (720p or higher) and saves filename as the video title.
+    Prioritizes 1080p but will accept 720p if 1080p is unavailable.
     Returns (video_id, original_title, file_path).
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -129,20 +143,33 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
             # Remove duplicates and sort
             available_heights = sorted(list(set(available_heights)), reverse=True)
             
-            # Check if 1080p is available
-            if 1080 not in available_heights:
-                raise RuntimeError(f"1080p quality is not available for this video. Available heights: {available_heights}")
+            # Find the best available quality (prefer 1080p, but accept 720p or higher)
+            best_quality = None
+            for height in available_heights:
+                if height >= 720:
+                    best_quality = height
+                    break
+            
+            if best_quality is None:
+                raise RuntimeError(f"No acceptable quality available (minimum 720p required). Available heights: {available_heights}")
         
-        # Now download with exactly 1080p format
-        ydl_opts["format"] = "bestvideo[height=1080]+bestaudio/best[height=1080]"
+        # Now download with the best available quality (720p or higher)
+        if best_quality == 1080:
+            ydl_opts["format"] = "bestvideo[height=1080]+bestaudio/best[height=1080]"
+        elif best_quality == 720:
+            ydl_opts["format"] = "bestvideo[height=720]+bestaudio/best[height=720]"
+        else:
+            # For other qualities >= 720p
+            ydl_opts["format"] = f"bestvideo[height={best_quality}]+bestaudio/best[height={best_quality}]"
+            
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
             
-            # Check if the downloaded video is exactly 1080p
+            # Check if the downloaded video meets our quality requirements
             height = info.get('height', 0)
-            if height != 1080:
-                raise RuntimeError(f"Video quality is not 1080p: {height}p. Only 1080p videos are allowed.")
+            if height < 720:
+                raise RuntimeError(f"Video quality is too low: {height}p. Minimum required is 720p.")
     except Exception as e:
         # Map any format-not-found cases to a clear error
         msg = str(e)
@@ -160,9 +187,9 @@ def download_video_simple(url: str, output_dir: str) -> Tuple[str, str, str]:
                         if height:
                             available_heights.append(height)
                     available_heights = sorted(list(set(available_heights)), reverse=True)
-                raise RuntimeError(f"1080p quality is not available for this video. Available heights: {available_heights}")
+                raise RuntimeError(f"No acceptable quality available (minimum 720p required). Available heights: {available_heights}")
             except Exception:
-                raise RuntimeError("1080p quality is not available for this video")
+                raise RuntimeError("No acceptable quality available (minimum 720p required)")
         raise
     video_id = info.get("id", "") or ""
     file_path = os.path.abspath(filename)
